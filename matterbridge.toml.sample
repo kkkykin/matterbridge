@@ -243,14 +243,10 @@ JoinDelay=0
 UseRelayMsg=false
 #RemoteNickFormat="{NICK}/{PROTOCOL}"
 
-#Use Ergo's NPC/NPCA roleplay commands (mutually exclusive with UseRelayMsg).
-#Requires roleplay.enabled=true on Ergo and mode +E on each target channel.
-#Use the default npc-nick-mask; Colornicks is ignored. Replies use text quotes.
-#IRC @*virtual-nick* or a leading *virtual-nick*: can mention the originating
-#QQ sender after their message has been relayed, subject to OneBot AllowMention.
-#OPTIONAL (default false)
-UseRoleplay=false
-#RemoteNickFormat="{NICK}-{USERID}"
+#With UseRelayMsg, IRC @virtual-nick or a leading virtual-nick: can mention the
+#originating QQ sender after their message has been relayed, subject to OneBot
+#AllowMention. Include {USERID} to distinguish users with identical names.
+#RemoteNickFormat="{NICK}-{USERID}/{PROTOCOL}"
 
 #When UseRelayMsg is true, and sanitizing a relayed nick completely wipes it out, a fallback can be used.
 #Note that this can potentially allow for anonymized messages to be sent to an IRC bridge.

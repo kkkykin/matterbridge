@@ -237,7 +237,6 @@ type Protocol struct {
 	UserName               string     // IRC
 	UseRelayFallback       bool       // IRC, controls whether RelayFallbackNick is used, defaults to true
 	UseRelayMsg            bool       // IRC
-	UseRoleplay            bool       // IRC, Ergo NPC/NPCA (requires channel mode +E)
 	VerboseJoinPart        bool       // IRC
 	WebhookBindAddress     string     // mattermost, slack
 	WebhookURL             string     // mattermost, slack

@@ -76,7 +76,7 @@ channel = "987654321"
 
 收到原生 `forward` 段后，通过 [`get_forward_msg`](https://github.com/botuniverse/onebot-11/blob/master/api/public.md#get_forward_msg-获取合并转发消息) 的字符串参数 `id` 读取内容。支持官方 `message` / `node` 数组，以及 NapCat 实际返回的 `messages` 消息对象数组。嵌套转发优先展开 `data.content` 中已有的消息，缺少内联内容时才按 ID 查询：NapCat 的内层 ID 不一定能用于 API。也支持内联 `node` 节点。CQ 字符串和消息段数组均可识别；转义后的 CQ 文字不会触发读取。
 
-主频道显示 `[查看合并转发：/join #mb-forward-…]`。进入后，bot 按顺序发送作者、正文和媒体链接；每有新读者进入会从头重播，已有读者也会看到重播。无需客户端支持 IRC 历史消息。查看窗口使用普通 bot 消息，不依赖 `UseRoleplay` / `UseRelayMsg`，不把转发节点注册为可 @ 的 QQ 用户。
+主频道显示 `[查看合并转发：/join #mb-forward-…]`。进入后，bot 按顺序发送作者、正文和媒体链接；每有新读者进入会从头重播，已有读者也会看到重播。无需客户端支持 IRC 历史消息。查看窗口使用普通 bot 消息，不依赖 `UseRelayMsg`，不把转发节点注册为可 @ 的 QQ 用户。
 
 - 临时频道设置 `+snmt`（隐藏、禁止外部发言、只读、仅频道管理员修改主题），使用随机名称；不要把保留前缀 `#mb-forward-` 加进 gateway。
 - 最后一位读者 PART、QUIT 或被 KICK 后，bot 自动 PART 并丢弃余下的展示队列；改名不会遗留虚假的成员。bot 被踢或 IRC 断线时丢弃窗口，不自动重建。
@@ -149,41 +149,40 @@ BotMentionTarget = "alice" # 可选：QQ 原生 @机器人 时提醒的固定 IR
 
 IRC 使用正文中的完整昵称触发客户端高亮，无需 IRCv3；实际通知由客户端设置决定。`ReverseMention = false` 只关闭桥接转换，不能禁止 IRC 客户端对原始文字自行高亮。修改配置后重启 matterbridge。
 
-## Ergo roleplay 虚拟昵称
+## Ergo RELAYMSG 虚拟昵称
 
-Ergo 的 `NPC` / `NPCA` 可以让一个机器人连接以多个虚拟昵称发言。在目标 IRC 账号启用：
+使用上游已有的 `RELAYMSG`，一个机器人连接即可用多个虚拟昵称发言和发送动作。在目标 IRC 账号启用：
 
 ```toml
 [irc.local]
-UseRoleplay = true
-RemoteNickFormat = "{NICK}-{USERID}"
+UseRelayMsg = true
+RemoteNickFormat = "{NICK}-{USERID}/{PROTOCOL}"
 ReverseMention = true
 BotMentionTarget = "alice" # 可选，沿用 QQ 原生 @机器人 的固定目标
 ```
 
-同时在 Ergo 的 `ircd.yaml` 设置 `roleplay.enabled: true`，由频道管理员执行
-`/MODE #频道 +E`。保持默认 `npc-nick-mask`，并确保 `require-oper`、`require-chanops`
-允许机器人发送。`add-suffix` 可设为 `false`，去掉正文末尾的机器人昵称。
-`UseRoleplay` 默认关闭，不能与已有的 `UseRelayMsg` 同时开启。
+Ergo 默认启用 `server.relaymsg.enabled` 和 `available-to-chanops`，由频道管理员执行
+`/MODE #频道 +o 机器人昵称` 即可授权；也可给机器人具有 `relaymsg` 能力的 IRC oper 身份。
+matterbridge 的 `UseRelayMsg` 默认关闭，需要显式启用。虚拟昵称必须包含服务器保留的
+分隔符，Ergo 默认为 `/`；桥接会自动检测并在格式缺少分隔符时补上，建议在格式中明确指定。
 
-例如 QQ 用户「张三」（QQ 号 123456）发言后，IRC 显示发送者 `*张三-123456*`：
+例如在支持 Unicode 昵称的 Ergo 上，QQ 用户「张三」（QQ 号 123456）发言后，IRC 显示发送者 `张三-123456/onebot`：
 
 | IRC 写法 | 发往来源 QQ 群的内容 |
 | --- | --- |
-| `@*张三-123456* 你好` | 原生 @123456 加上 ` 你好` |
-| `*张三-123456*: 你好`（消息开头） | 原生 @123456 加上 `: 你好` |
-| `@张三-123456 你好` | 原生 @123456 加上 ` 你好` |
+| `@张三-123456/onebot 你好` | 原生 @123456 加上 ` 你好` |
+| `张三-123456/onebot: 你好`（消息开头） | 原生 @123456 加上 `: 你好` |
 
 昵称映射来自实际转发的 QQ 消息，支持格式化昵称及空格替换后的昵称；包含
 `{USERID}` 可以区分重名用户。ASCII 模式的 IRC 服务器还会替换昵称中的中文，
-可用 `RemoteNickFormat="qq-{USERID}"` 获得稳定昵称。映射按 IRC 频道及来源 OneBot 账号、QQ 群隔离，
+可用 `RemoteNickFormat="qq-{USERID}/{PROTOCOL}"` 获得稳定昵称。映射按 IRC 频道及来源 OneBot 账号、QQ 群隔离，
 最多缓存 4096 个昵称，重启清空。同名冲突、未见过的昵称保持文字；虚拟昵称
 映射只在来源 QQ 群生成提及，并遵守 `AllowMention`。原有 `@QQ号`、`@群名片`
 和 QQ → IRC 的 mention 设置继续有效。链接、CQ 代码、引用和附件说明不参与映射。
 
-Roleplay 自动过滤 Ergo 强制发送的自身回显，避免循环转发。由于 NPC 不传递
-IRCv3 回复标签，发往 IRC 的回复使用文字引用；需要原生回复时可选择 `UseRelayMsg`。
-长消息由桥接拆分，即使设置了 `MessageSplit=false`。
+RELAYMSG 的自身回显沿用上游过滤逻辑，避免循环转发。开启 `PreserveThreading` 时支持
+IRCv3 原生回复。RELAYMSG 长消息由桥接按 UTF-8 边界拆分，即使设置了 `MessageSplit=false`，
+因为 IRC 库只能拆分普通 PRIVMSG/NOTICE。
 
 ## 验证与维护
 
@@ -203,12 +202,12 @@ bash bridge/onebot/test-e2e.sh
 E2E_ERGO=/absolute/path/to/ergo bash bridge/onebot/test-e2e.sh
 ```
 
-每个用例根据 `ergo defaultconfig` 生成独立配置，在回环地址的临时端口启动服务，使用临时数据库；退出时关闭进程。测试自动启用 roleplay 和频道 `+E`，分别覆盖 ASCII 与 PRECIS Unicode 昵称，不依赖已有 IRC 实例。无需 Python；下载需要 curl、tar 和 sha256sum（macOS 可用 shasum），Go 竞态检测需要 C 编译环境。
+每个用例根据 `ergo defaultconfig` 生成独立配置，在回环地址的临时端口启动服务，使用临时数据库；退出时关闭进程。RELAYMSG 测试沿用 Ergo 默认开关并给机器人频道 `+o`，分别覆盖 ASCII 与 PRECIS Unicode 昵称，不依赖已有 IRC 实例。无需 Python；下载需要 curl、tar 和 sha256sum（macOS 可用 shasum），Go 竞态检测需要 C 编译环境。
 
-测试构建仓库根目录的实际 matterbridge 程序，检查 IRC/API ↔ QQ、群间互通、方向、网关隔离、多网关订阅、去重、自身过滤、重连、重启及 SIGTERM 退出。原生回复在普通 PRIVMSG、RELAYMSG 和两种 `MessageSplit` 设置下验证，包含回复桥接副本、拆分片段的 ID 映射、未知父消息回退。另有关闭原生回复时的文字引用，以及 NPC/NPCA、提及、UTF-8 拆分、强制回显过滤测试。QQ 端使用 OneBot 11 模拟服务，真实 NapCat/QQ 账号仍需部署联调。
+测试构建仓库根目录的实际 matterbridge 程序，检查 IRC/API ↔ QQ、群间互通、方向、网关隔离、多网关订阅、去重、自身过滤、重连、重启及 SIGTERM 退出。原生回复在普通 PRIVMSG、RELAYMSG 和两种 `MessageSplit` 设置下验证，包含回复桥接副本、拆分片段的 ID 映射、未知父消息回退。另有关闭原生回复时的文字引用，以及 RELAYMSG 动作、昵称提及、UTF-8 拆分、自身回显过滤测试。QQ 端使用 OneBot 11 模拟服务，真实 NapCat/QQ 账号仍需部署联调。
 
 下载及构建缓存放在 `bridge/onebot/.cache/e2e`，可用 `E2E_CACHE_DIR` 覆盖。默认对测试驱动启用 `-race`，`E2E_RACE=1` 会同时检测整个程序。完整程序竞态检查可能报告上游 IRC 适配器已有的竞态。
 
 合并转发测试覆盖官方/NapCat 返回格式、嵌套 API 引用与内联内容、多人重播、改名、PART/QUIT 清理、bot 被 KICK 后不重建，以及无人进入时超时清理。设置 `E2E_LIVE_FORWARD_FILE=/path/to/response-data.json` 可把真实 `get_forward_msg` 响应的 `data` 对象送入本地 Ergo 测试，并检查内联嵌套各层的正文；测试不会向真实 QQ 发消息。
 
-协议代码集中在 `bridge/onebot/`，注册入口为 `gateway/bridgemap/bonebot.go`；WebSocket 客户端维持当前独立实现，无须重写公共桥接接口。新增消息元数据类型在 `bridge/config/message.go`，上游 `Message` 仅增加所需字段。引用映射与回退集中在 `gateway/replies.go`，保留上游已有的其他协议线程处理：新增映射必须按账号、频道和消息 ID 隔离，并能从桥接副本找回原消息，不能直接复用上游仅按协议和 ID 索引的缓存。IRC 的回复、提及、roleplay 和拆分逻辑分别在独立文件中，避免继续扩大 `irc.go` 与 `gateway.go` 的改动范围。
+协议代码集中在 `bridge/onebot/`，注册入口为 `gateway/bridgemap/bonebot.go`；WebSocket 客户端维持当前独立实现，无须重写公共桥接接口。新增消息元数据类型在 `bridge/config/message.go`，上游 `Message` 仅增加所需字段。引用映射与回退集中在 `gateway/replies.go`，保留上游已有的其他协议线程处理：新增映射必须按账号、频道和消息 ID 隔离，并能从桥接副本找回原消息，不能直接复用上游仅按协议和 ID 索引的缓存。IRC 的回复、提及、昵称映射和拆分逻辑分别在独立文件中，复用上游 RELAYMSG 发送逻辑，避免继续扩大 `irc.go` 与 `gateway.go` 的改动范围。

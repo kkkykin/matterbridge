@@ -26,9 +26,9 @@ func (b *Birc) splitMessage(text string, prefix int) ([]string, error) {
 		return nil, errMessageBudgetTooSmall
 	}
 
-	if b.GetBool("UseRoleplay") {
-		// NPC bypasses girc's splitter. Preserve UTF-8 boundaries even in
-		// long Chinese text without spaces between words.
+	if b.GetBool("UseRelayMsg") {
+		// RELAYMSG bypasses girc's splitter.
+		// Preserve UTF-8 boundaries in long Chinese text without spaces.
 		return helper.GetSubLines(text, budget, clipped), nil
 	}
 

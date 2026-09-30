@@ -136,7 +136,7 @@ func (b *Birc) incomingReply(event girc.Event, message *config.Message) {
 
 func (b *Birc) prepareReply(message *config.Message) {
 	parent := ""
-	if b.GetBool("PreserveThreading") && !b.GetBool("UseRoleplay") && b.i.HasCapability("message-tags") && message.ParentValid() {
+	if b.GetBool("PreserveThreading") && b.i.HasCapability("message-tags") && message.ParentValid() {
 		parent = b.replies.wireID(message.Channel, message.ParentID)
 	}
 	if parent == "" {
@@ -161,7 +161,7 @@ func (b *Birc) outgoingReplyID(message config.Message) string {
 
 func (b *Birc) sendIRCLine(line string, message config.Message) error {
 	line = strings.TrimRight(line, "\r\n")
-	if b.GetBool("PreserveThreading") && !b.GetBool("UseRoleplay") && b.i.HasCapability("message-tags") {
+	if b.GetBool("PreserveThreading") && b.i.HasCapability("message-tags") {
 		tags := girc.Tags{}
 		if message.ID != "" {
 			tags.Set(ircCorrelationTag, message.ID)
@@ -173,7 +173,7 @@ func (b *Birc) sendIRCLine(line string, message config.Message) error {
 			line = string(tags.Bytes()) + " " + line
 		}
 	}
-	if b.GetBool("MessageSplit") || b.GetBool("UseRoleplay") {
+	if b.GetBool("MessageSplit") || b.GetBool("UseRelayMsg") {
 		return b.i.Cmd.SendRawNoSplit(line + "\r\n")
 	}
 	return b.i.Cmd.SendRaw(line)

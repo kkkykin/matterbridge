@@ -569,8 +569,8 @@ func (b *Birc) handleOtherAuth(client *girc.Client, event girc.Event) {
 		var mymap string
 
 		utf8mapcheck, ok := client.GetServerOption("UTF8MAPPING")
-		if !ok { // By now we have ruled out precis, so let's try permissive first
-			mymap = CM_PERMISSIVE
+		if !ok { // Without UTF8MAPPING, use ASCII so the first Unicode nick is not rejected.
+			mymap = CM_ASCII
 		} else { // We can set it to ascii later if there's an error.
 			switch utf8mapcheck {
 			case CM_PRECIS, "rfc7613", "rfc8265":
@@ -671,8 +671,8 @@ func (b *Birc) handlePrivMsg(client *girc.Client, event girc.Event) {
 		rmsg.Text = rmsg.Text[8 : len(rmsg.Text)-1]
 	}
 	b.incomingReply(event, &rmsg)
-	if b.GetBool("UseRoleplay") {
-		b.roleplay.mentions(&rmsg)
+	if b.GetBool("UseRelayMsg") {
+		b.nickMentions.mentions(&rmsg)
 	}
 
 	b.Log.Debugf("<= Sending message from %s on %s to gateway", event.Params[0], b.Account)

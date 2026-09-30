@@ -43,7 +43,7 @@ type Birc struct {
 	CasemapFailures                           int                     // Count of casemapping errors
 	RelayMsgFailures                          int                     // Count of general relaymsg errors
 	replies                                   *ircReplies
-	roleplay                                  *ircRoleplay
+	nickMentions                              *ircNickMentions
 	forwards                                  *ircForwards
 
 	*bridge.Config
@@ -57,7 +57,7 @@ func New(cfg *bridge.Config) bridge.Bridger {
 	b := &Birc{}
 	b.Config = cfg
 	b.replies = newIRCReplies()
-	b.roleplay = newIRCRoleplay()
+	b.nickMentions = newIRCNickMentions()
 	if !b.IsKeySet("PreserveThreading") {
 		b.SetBool("PreserveThreading", true)
 	}
@@ -104,9 +104,6 @@ func New(cfg *bridge.Config) bridge.Bridger {
 }
 
 func (b *Birc) Connect() error {
-	if b.GetBool("UseRoleplay") && b.GetBool("UseRelayMsg") {
-		return errors.New("UseRoleplay and UseRelayMsg cannot both be enabled")
-	}
 	if target := b.GetString("BotMentionTarget"); b.GetBool("ReverseMention") && target != "" && !validMentionNick(target) {
 		return fmt.Errorf("invalid BotMentionTarget %q: expected a single IRC nick without @", target)
 	}
@@ -142,8 +139,6 @@ func (b *Birc) Connect() error {
 	i.Handlers.Add(girc.ERR_NOMOTD, b.handleOtherAuth)
 	debugHandler := i.Handlers.Add(girc.ALL_EVENTS, b.handleOther)
 	i.Handlers.Add(girc.ALL_EVENTS, b.handleReplyEcho)
-	i.Handlers.Add("573", b.handleRoleplayError)
-	i.Handlers.Add(girc.ERR_UNKNOWNCOMMAND, b.handleRoleplayError)
 	b.i = i
 	b.startForwards(i)
 
@@ -219,10 +214,6 @@ func (b *Birc) Send(msg config.Message) (string, error) {
 	b.prepareMentions(&msg)
 	b.prepareForwards(&msg)
 	b.prepareReply(&msg)
-	if b.GetBool("UseRoleplay") && msg.Event != config.EventNoticeIRC {
-		msg.Username = b.roleplayNick(msg.Username)
-		b.roleplay.remember(msg)
-	}
 
 	// TODO: Put all of the following function calls into their own goroutines using a sync.WaitGroup
 	// so that they can run concurrently, and also reduce the likelihood of out-of-order message processing
@@ -261,9 +252,10 @@ func (b *Birc) Send(msg config.Message) (string, error) {
 	// even when draft/multiline is enabled.  We'll also need to handle max-bytes and max-lines values for multiline
 	//
 	// For now, we'll repurpose the MessageSplit setting to hand off the whole message to girc when set to false.
+	// RELAYMSG must be split here because girc only splits PRIVMSG and NOTICE.
 	msg.ID = b.outgoingReplyID(msg)
 	queued := false
-	if b.GetBool("MessageSplit") || b.GetBool("UseRoleplay") {
+	if b.GetBool("MessageSplit") || b.GetBool("UseRelayMsg") {
 		msgLines, err := b.splitMessage(msg.Text, prefix)
 		if err != nil {
 			return "", err
@@ -374,12 +366,6 @@ func (b *Birc) doSend() {
 
 		<-throttle.C
 		username := msg.Username
-		if b.GetBool("UseRoleplay") && msg.Event != config.EventNoticeIRC {
-			if err := b.sendIRCLine(roleplayLine(msg), msg); err != nil {
-				b.Log.WithError(err).Warn("Error sending IRC roleplay message")
-			}
-			continue
-		}
 		// Optional support for the proposed RELAYMSG extension, described at
 		// https://github.com/jlu5/ircv3-specifications/blob/master/extensions/relaymsg.md
 		// nolint:nestif
@@ -387,6 +373,7 @@ func (b *Birc) doSend() {
 			// Avoid needlessly querying the irc lib on each msg, in case it takes out any locks
 			if b.i.HasCapability("overdrivenetworks.com/relaymsg") || b.i.HasCapability("draft/relaymsg") {
 				// nick is now sanitized in gateway.go
+				b.nickMentions.remember(msg)
 				text := msg.Text
 
 				// Work around girc chomping leading commas on single word messages?
@@ -590,13 +577,6 @@ func (b *Birc) handlePrefix(msg *config.Message) int {
 	// account for spaces, command names, and other padding
 	// TODO: make these len()'s into constants?  But the go compiler does that anyway, so no performance loss here
 	switch {
-	case b.GetBool("UseRoleplay") && msg.Event != config.EventNoticeIRC:
-		// Reserve the default NPC mask and optional " (botnick)" suffix that
-		// Ergo adds to delivered messages, as well as NPCA's ACTION wrapper.
-		prefix = max(prefix, len(msg.Username)+2*len(b.Nick)+len(msg.Channel)+len(":**!@npc.fakeuser.invalid PRIVMSG  : ()\r\n"))
-		if msg.Event == config.EventUserAction {
-			prefix += len("\x01ACTION \x01")
-		}
 	case b.GetBool("UseRelayMsg"):
 		switch msg.Event {
 		case config.EventUserAction:
@@ -612,7 +592,7 @@ func (b *Birc) handlePrefix(msg *config.Message) int {
 		prefix += len("PRIVMSG  :")
 	}
 
-	if !b.GetBool("UseRelayMsg") && !b.GetBool("UseRoleplay") && b.GetBool("Colornicks") {
+	if !b.GetBool("UseRelayMsg") && b.GetBool("Colornicks") {
 		// Separate colors for different fields (label, proto, nick, etc)
 		userslice := strings.FieldsFunc(msg.Username, func(r rune) bool {
 			return r == '\u0020' // split only on regular space; ignore NBSP, tab, newline
@@ -651,9 +631,6 @@ func (b *Birc) skipPrivMsg(event girc.Event) bool {
 	}
 	// Our nick can be changed
 	b.Nick = b.i.GetNick()
-	if b.GetBool("UseRoleplay") && ownRoleplayEcho(event, b.Nick) {
-		return true
-	}
 
 	// freenode doesn't send 001 as first reply
 	if event.Command == "NOTICE" && len(event.Params) != 2 {

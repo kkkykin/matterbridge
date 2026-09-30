@@ -35,7 +35,6 @@ func startErgo(t *testing.T, casemapping string, configure ...func(map[string]an
 	cfg["lock-file"] = filepath.Join(dir, "ircd.lock")
 	cfg["fakelag"].(map[string]any)["enabled"] = false
 	cfg["languages"].(map[string]any)["enabled"] = false
-	cfg["roleplay"].(map[string]any)["enabled"] = true
 	cfg["allow-environment-overrides"] = false
 	for _, modify := range configure {
 		modify(cfg)

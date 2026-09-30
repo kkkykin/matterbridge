@@ -16,10 +16,13 @@ import (
 	"github.com/matterbridge-org/matterbridge/bridge/config"
 	ob "github.com/matterbridge-org/matterbridge/bridge/onebot/internal/client"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 )
 
 func testBridge(t *testing.T) *Bridge {
 	t.Helper()
+	// NewConfigFromString uses global Viper state; isolate overrides per fixture.
+	viper.Reset()
 	log := logrus.New()
 	log.Out = io.Discard
 	cfg := config.NewConfigFromString(log, []byte(`[onebot.qq]

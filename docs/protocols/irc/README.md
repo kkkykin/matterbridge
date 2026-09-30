@@ -25,10 +25,10 @@ Password="yourpassword"
 
 ### Can a single bot speak as virtual users on Ergo?
 
-Yes. `UseRelayMsg=true` supports Ergo's `RELAYMSG`; `UseRoleplay=true` supports
-its separate `NPC` / `NPCA` roleplay commands. Enable only one. Roleplay requires
-server-side `roleplay.enabled: true` and mode `+E` on the target channel.
-See [UseRoleplay](settings.md#useroleplay) for setup and reply limitations.
+Yes. `UseRelayMsg=true` uses Ergo's `RELAYMSG` to send from virtual nicknames.
+Ergo enables RELAYMSG by default; matterbridge requires opting in. Under Ergo's
+default configuration, give the bot channel operator status (`+o`).
+See [UseRelayMsg](settings.md#userelaymsg) for setup and OneBot mentions.
 
 ### Can QQ users mention IRC users?
 
