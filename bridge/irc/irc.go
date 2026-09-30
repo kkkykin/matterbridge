@@ -503,6 +503,9 @@ func (b *Birc) getClient() (*girc.Client, error) {
 		Debug:         debug,
 		SupportedCaps: map[string][]string{"overdrivenetworks.com/relaymsg": nil, "draft/relaymsg": nil},
 	})
+	// On Ergo, CHATHISTORY disables automatic history replay on join/reattach.
+	// Only relay live messages; do not request history or forward HistServ events.
+	i.Config.SupportedCaps["draft/chathistory"] = nil
 	if b.GetBool("PreserveThreading") {
 		i.Config.SupportedCaps["echo-message"] = nil
 	}

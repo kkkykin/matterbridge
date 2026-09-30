@@ -23,6 +23,14 @@ Password="yourpassword"
 
 ## FAQ
 
+### Does Ergo history get forwarded again when the bridge reconnects?
+
+The bridge negotiates `draft/chathistory` without requesting history. On Ergo,
+this disables automatic replay for the bridge connection, preventing old chat
+messages and HistServ mode/nickname events from being forwarded again on join
+or reconnect. Other IRC clients can continue using `autoreplay-on-join`.
+This applies regardless of `UseRelayMsg` or `PreserveThreading`.
+
 ### Can a single bot speak as virtual users on Ergo?
 
 Yes. `UseRelayMsg=true` uses Ergo's `RELAYMSG` to send from virtual nicknames.
