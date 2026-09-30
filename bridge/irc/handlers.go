@@ -126,6 +126,9 @@ func (b *Birc) handleInvite(client *girc.Client, event girc.Event) {
 }
 
 func (b *Birc) handleJoinPartKICK(client *girc.Client, event girc.Event) {
+	if forwardChannelEvent(event) {
+		return
+	}
 	if len(event.Params) == 0 {
 		b.Log.Debugf("handleJoinPartKICK: empty Params? %#v", event)
 		return
@@ -198,6 +201,9 @@ func (b *Birc) handleJoinPartPrefix(client *girc.Client, event girc.Event) {
 }
 
 func (b *Birc) handleJoinPart(client *girc.Client, event girc.Event) {
+	if forwardChannelEvent(event) {
+		return
+	}
 	if len(event.Params) == 0 {
 		b.Log.Debugf("handleJoinPart: empty Params? %#v", event)
 		return
@@ -663,6 +669,10 @@ func (b *Birc) handlePrivMsg(client *girc.Client, event girc.Event) {
 	// strip action, we made an event if it was an action
 	if event.IsAction() {
 		rmsg.Text = rmsg.Text[8 : len(rmsg.Text)-1]
+	}
+	b.incomingReply(event, &rmsg)
+	if b.GetBool("UseRoleplay") {
+		b.roleplay.mentions(&rmsg)
 	}
 
 	b.Log.Debugf("<= Sending message from %s on %s to gateway", event.Params[0], b.Account)

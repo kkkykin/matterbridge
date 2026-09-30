@@ -30,6 +30,7 @@ type Gateway struct {
 	Message        chan config.Message
 	Name           string
 	Messages       *lru.Cache[string, []*BrMsgID]
+	replies        *lru.Cache[replyKey, *replyRecord]
 
 	logger *logrus.Entry
 }
@@ -145,6 +146,7 @@ func (gw *Gateway) SendMessage( //nolint:gocyclo,funlen
 	canonicalParentMsgID string,
 ) (string, error) {
 	msg := *rmsg
+	msg.SourceChannel = rmsg.Channel
 	// Only send the avatar download event to ourselves.
 	if msg.Event == config.EventAvatarDownload {
 		if channel.ID != getChannelID(rmsg) {
@@ -200,6 +202,8 @@ func (gw *Gateway) SendMessage( //nolint:gocyclo,funlen
 	if msg.ParentID == "" && rmsg.ParentID != "" {
 		msg.ParentID = config.ParentIDNotFound
 	}
+
+	gw.prepareReply(rmsg, &msg, dest, channel)
 
 	drop, err := gw.modifyOutMessageTengo(rmsg, &msg, dest)
 	if err != nil {
@@ -456,7 +460,7 @@ func (gw *Gateway) modifyUsername(msg *config.Message, dest *bridge.Bridge) erro
 	if dest.GetBool("StripNick") { // Sanitize nick so that it contains nothing but alphanumeric characters
 		re := regexp.MustCompile("[^a-zA-Z0-9]+")
 		msg.Username = re.ReplaceAllString(msg.Username, "")
-	} else if dest.Protocol == ircProtocol && !dest.GetBool("UseRelayMsg") && dest.GetBool("Colornicks") {
+	} else if dest.Protocol == ircProtocol && !dest.GetBool("UseRelayMsg") && !dest.GetBool("UseRoleplay") && dest.GetBool("Colornicks") {
 		// Colornicks is currently only available for IRC, but it's not compatible with Relaymsg.
 		// If we didn't strip the nick, then we'll swap any spaces with NBSP's.
 		// This is only needed for the Colornicks setting to function.
@@ -479,10 +483,10 @@ func (gw *Gateway) modifyUsername(msg *config.Message, dest *bridge.Bridge) erro
 		msg.Username = re.ReplaceAllString(msg.Username, replace)
 	}
 
-	if dest.GetBool("UseRelayMsg") && !dest.GetBool("Colornicks") && len(msg.Username) > 0 && strings.Contains(nick, "{NOPINGNICK}") {
+	if (dest.GetBool("UseRoleplay") || dest.GetBool("UseRelayMsg") && !dest.GetBool("Colornicks")) && len(msg.Username) > 0 && strings.Contains(nick, "{NOPINGNICK}") {
 		nick = strings.ReplaceAll(nick, "{NOPINGNICK}", msg.Username)
 
-		gw.logger.Warnf("{NOPINGNICK} in RemoteNickFormat is incompatible with UseRelayMsg, falling back to {NICK} on %s", dest.Account)
+		gw.logger.Warnf("{NOPINGNICK} in RemoteNickFormat is incompatible with IRC virtual nicks, falling back to {NICK} on %s", dest.Account)
 	} else {
 		// fix utf-8 issue #193
 		i := 0

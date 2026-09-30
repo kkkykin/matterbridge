@@ -50,6 +50,12 @@ type Message struct {
 	Timestamp time.Time `json:"timestamp"`
 	ID        string    `json:"id"`
 	Extra     map[string][]any
+
+	Quote *MessageQuote `json:"quote,omitempty"`
+	// Immutable rendering hints. Use only while their concatenated text equals Text.
+	MentionParts []MentionPart `json:"-"`
+	// Source channel before the gateway substitutes the destination channel.
+	SourceChannel string `json:"-"`
 }
 
 func (m Message) ParentNotFound() bool {
@@ -129,9 +135,10 @@ type ChannelMember struct {
 type ChannelMembers []ChannelMember
 
 type Protocol struct {
-	AllowMention           []string // discord
+	AllowMention           []string // discord, fluxer, onebot
 	BindAddress            string   // mattermost, slack // DEPRECATED
 	Buffer                 int      // api
+	BotMentionTarget       string   // IRC, fixed nick for a native OneBot @bot
 	Charset                string   // irc
 	ClientID               string   // msteams
 	Casemapping            string   // IRC, auto-configured setting for allowable characters in nicks, not configurable
@@ -163,6 +170,7 @@ type Protocol struct {
 	MediaConvertTgs        string     // telegram
 	MediaConvertWebPToPNG  bool       // telegram
 	MessageDelay           int        // IRC, time in millisecond to wait between messages
+	ForwardChannelTimeout  int        // IRC, seconds to wait for the first forward reader (default 300)
 	MessageFormat          string     // telegram
 	MessageLength          int        // IRC, max length of a message allowed, defaults to 512 (counting CRLF)
 	MessagePrefix          int        // IRC, current length of message prefix for bot, not configurable
@@ -197,6 +205,7 @@ type Protocol struct {
 	ReplaceMessages        [][]string // all protocols
 	ReplaceNicks           [][]string // all protocols
 	RemoteNickFormat       string     // all protocols
+	ReverseMention         bool       // IRC, translate OneBot mentions to IRC nicks
 	RunCommands            []string   // IRC
 	Server                 string     // IRC,mattermost,XMPP,discord,matrix
 	SessionFile            string     // msteams,whatsapp
@@ -228,6 +237,7 @@ type Protocol struct {
 	UserName               string     // IRC
 	UseRelayFallback       bool       // IRC, controls whether RelayFallbackNick is used, defaults to true
 	UseRelayMsg            bool       // IRC
+	UseRoleplay            bool       // IRC, Ergo NPC/NPCA (requires channel mode +E)
 	VerboseJoinPart        bool       // IRC
 	WebhookBindAddress     string     // mattermost, slack
 	WebhookURL             string     // mattermost, slack

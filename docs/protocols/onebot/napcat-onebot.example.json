@@ -1,0 +1,18 @@
+{
+  "network": {
+    "websocketServers": [
+      {
+        "name": "matterbridge",
+        "enable": true,
+        "host": "127.0.0.1",
+        "port": 3001,
+        "messagePostFormat": "array",
+        "reportSelfMessage": false,
+        "token": "replace-onebot-token",
+        "enableForcePushEvent": true,
+        "heartInterval": 30000,
+        "debug": false
+      }
+    ]
+  }
+}

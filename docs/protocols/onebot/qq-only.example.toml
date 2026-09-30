@@ -1,0 +1,18 @@
+[onebot.qq]
+Server = "ws://127.0.0.1:3001/"
+Token = "replace-onebot-token"
+RemoteNickFormat = "[{PROTOCOL}] <{NICK}> "
+# 目标群的个人提及默认开启；全体提及需要加入 "everyone"。
+AllowMention = ["users"]
+
+[[gateway]]
+name = "qq-groups"
+enable = true
+
+[[gateway.inout]]
+account = "onebot.qq"
+channel = "123456789"
+
+[[gateway.inout]]
+account = "onebot.qq"
+channel = "987654321"

@@ -23,6 +23,48 @@ Password="yourpassword"
 
 ## FAQ
 
+### Can a single bot speak as virtual users on Ergo?
+
+Yes. `UseRelayMsg=true` supports Ergo's `RELAYMSG`; `UseRoleplay=true` supports
+its separate `NPC` / `NPCA` roleplay commands. Enable only one. Roleplay requires
+server-side `roleplay.enabled: true` and mode `+E` on the target channel.
+See [UseRoleplay](settings.md#useroleplay) for setup and reply limitations.
+
+### Can QQ users mention IRC users?
+
+Set `ReverseMention=true` in the destination `[irc.myirc]` account to render
+OneBot message text such as `@alice hello` as `alice hello`. Any complete IRC
+nick can be used; no cross-platform identity mapping or member lookup is needed.
+This setting defaults to `false`.
+
+Optionally set `BotMentionTarget="alice"` to map a native QQ mention of the
+bridge bot to a fixed IRC nick. An empty target leaves native bot mentions as
+`@QQ-number` text. Other native QQ mentions stay unchanged. Settings apply to
+all channels of that IRC account; other destination protocols are unaffected.
+
+Only original message text is converted. URLs, email addresses, CQ codes,
+media descriptions and quote previews stay literal. If message processing
+rewrites the body before sending, conversion is skipped. Highlighting depends
+on the IRC client; disabling conversion does not disable client highlights.
+See [OneBot mentions](../onebot/README.md#qq--irc-的--提及) for examples.
+
+### Can replies be preserved across bridges?
+
+`PreserveThreading` defaults to `true` for IRC. Native replies use the IRCv3
+`+draft/reply` client tag and require a server that supports `message-tags` and
+assigns `msgid` values. The bridge requests `echo-message` to learn the IDs of
+its own messages. Clients must support reply tags to display native references.
+
+Replies to messages copied from another protocol resolve back to the original
+message in that protocol. Mapping is scoped to each gateway, account and channel
+and is held in a bounded memory cache. Replies to a split message reference its
+first fragment. Missing mappings or servers without message tags use a text
+quote preview. Set `PreserveThreading=false` to always use text previews.
+
+Typing `>` or a CQ reply code remains ordinary text; use an IRCv3 client's reply
+action for native references. See the [OneBot reply documentation](../onebot/README.md#引用与回复)
+for QQ behavior and preview limits.
+
 ### How to connect to a password-protected channel?
 
 ```toml

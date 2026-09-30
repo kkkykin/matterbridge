@@ -48,6 +48,8 @@ Please let us know if you are able to regularly test and maybe maintain a specif
 - [Nextcloud Talk](https://nextcloud.com/talk/) (no active maintainer)
   - Matterbridge [nctalk docs](nctalk/)
   - Channel format: `channel_id` as seen at the end of URL (eg. `xs25tz5y`)
+- [OneBot 11 / QQ via NapCat](onebot/) (local fork)
+  - Channel format: positive decimal QQ group ID, e.g. `123456789`
 - [Rocket.chat](https://rocket.chat) (no active maintainer)
   - Matterbridge docs:
     - [rocketchat docs](rocketchat/)

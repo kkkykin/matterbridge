@@ -159,6 +159,7 @@ func (r *Router) handleReceive() {
 			for _, br := range gw.Bridges {
 				msgIDs = append(msgIDs, gw.handleMessage(&msg, br)...)
 			}
+			gw.rememberReply(&msg, msgIDs)
 
 			if msg.ID != "" {
 				_, exists := gw.Messages.Get(msg.Protocol + " " + msg.ID)

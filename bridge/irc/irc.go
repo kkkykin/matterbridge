@@ -16,7 +16,6 @@ import (
 	"github.com/lrstanley/girc"
 	"github.com/matterbridge-org/matterbridge/bridge"
 	"github.com/matterbridge-org/matterbridge/bridge/config"
-	"github.com/matterbridge-org/matterbridge/bridge/helper"
 	stripmd "github.com/writeas/go-strip-markdown"
 
 	// We need to import the 'data' package as an implicit dependency.
@@ -43,6 +42,9 @@ type Birc struct {
 	RelayMsgSep                               string                  // current setting for the Relaymsg separator(s)
 	CasemapFailures                           int                     // Count of casemapping errors
 	RelayMsgFailures                          int                     // Count of general relaymsg errors
+	replies                                   *ircReplies
+	roleplay                                  *ircRoleplay
+	forwards                                  *ircForwards
 
 	*bridge.Config
 }
@@ -54,6 +56,11 @@ const defaultMaxPrefix = 115 // 30 + 18 + 63 + 4 from girc's event.go
 func New(cfg *bridge.Config) bridge.Bridger {
 	b := &Birc{}
 	b.Config = cfg
+	b.replies = newIRCReplies()
+	b.roleplay = newIRCRoleplay()
+	if !b.IsKeySet("PreserveThreading") {
+		b.SetBool("PreserveThreading", true)
+	}
 	b.Nick = b.GetString("Nick")
 	b.connected = make(chan error)
 	b.names = make(map[string][]string)
@@ -97,6 +104,12 @@ func New(cfg *bridge.Config) bridge.Bridger {
 }
 
 func (b *Birc) Connect() error {
+	if b.GetBool("UseRoleplay") && b.GetBool("UseRelayMsg") {
+		return errors.New("UseRoleplay and UseRelayMsg cannot both be enabled")
+	}
+	if target := b.GetString("BotMentionTarget"); b.GetBool("ReverseMention") && target != "" && !validMentionNick(target) {
+		return fmt.Errorf("invalid BotMentionTarget %q: expected a single IRC nick without @", target)
+	}
 	if b.GetBool("UseSASL") && b.GetString("TLSClientCertificate") != "" {
 		return errors.New("you can't enable SASL and TLSClientCertificate at the same time")
 	}
@@ -127,8 +140,12 @@ func (b *Birc) Connect() error {
 	i.Handlers.Add(girc.RPL_WELCOME, b.handleNewConnection)
 	i.Handlers.Add(girc.RPL_ENDOFMOTD, b.handleOtherAuth)
 	i.Handlers.Add(girc.ERR_NOMOTD, b.handleOtherAuth)
-	i.Handlers.Add(girc.ALL_EVENTS, b.handleOther)
+	debugHandler := i.Handlers.Add(girc.ALL_EVENTS, b.handleOther)
+	i.Handlers.Add(girc.ALL_EVENTS, b.handleReplyEcho)
+	i.Handlers.Add("573", b.handleRoleplayError)
+	i.Handlers.Add(girc.ERR_UNKNOWNCOMMAND, b.handleRoleplayError)
 	b.i = i
+	b.startForwards(i)
 
 	go b.doJoin()
 	go b.doSend()
@@ -141,7 +158,7 @@ func (b *Birc) Connect() error {
 		b.Log.Info("Connection succeeded for bridge " + b.Account)
 		b.FirstConnection = false
 		if b.GetInt("DebugLevel") == 0 {
-			b.i.Handlers.Clear(girc.ALL_EVENTS)
+			i.Handlers.Remove(debugHandler)
 		}
 	}()
 
@@ -149,6 +166,7 @@ func (b *Birc) Connect() error {
 }
 
 func (b *Birc) Disconnect() error {
+	b.forwards.close()
 	b.i.Close()
 	close(b.Local)
 	close(b.channelsChan)
@@ -198,6 +216,13 @@ func (b *Birc) Send(msg config.Message) (string, error) {
 	if !b.prefixDone { // we haven't joined a channel yet.  drop the message
 		return "", nil
 	}
+	b.prepareMentions(&msg)
+	b.prepareForwards(&msg)
+	b.prepareReply(&msg)
+	if b.GetBool("UseRoleplay") && msg.Event != config.EventNoticeIRC {
+		msg.Username = b.roleplayNick(msg.Username)
+		b.roleplay.remember(msg)
+	}
 
 	// TODO: Put all of the following function calls into their own goroutines using a sync.WaitGroup
 	// so that they can run concurrently, and also reduce the likelihood of out-of-order message processing
@@ -236,17 +261,26 @@ func (b *Birc) Send(msg config.Message) (string, error) {
 	// even when draft/multiline is enabled.  We'll also need to handle max-bytes and max-lines values for multiline
 	//
 	// For now, we'll repurpose the MessageSplit setting to hand off the whole message to girc when set to false.
-	if b.GetBool("MessageSplit") {
-		msgLines := helper.GetSubLinesWords(msg.Text, b.MessageLength-prefix, b.GetString("MessageClipped"))
+	msg.ID = b.outgoingReplyID(msg)
+	queued := false
+	if b.GetBool("MessageSplit") || b.GetBool("UseRoleplay") {
+		msgLines, err := b.splitMessage(msg.Text, prefix)
+		if err != nil {
+			return "", err
+		}
 		for i := range msgLines {
 			if len(b.Local) >= b.MessageQueue {
 				b.Log.Debugf("flooding, dropping message (queue at %d)", len(b.Local))
+				if queued {
+					return msg.ID, nil
+				}
 				return "", nil
 			}
 
 			msg.Text = msgLines[i]
 
 			b.Local <- msg
+			queued = true
 		}
 	} else { // Not splitting messages.  Hopefully girc does it, or else the server might silently drop it
 		if len(msg.Text)+prefix > (b.maxLen + defaultMaxPrefix) {
@@ -254,8 +288,11 @@ func (b *Birc) Send(msg config.Message) (string, error) {
 		}
 
 		b.Local <- msg
+		queued = true
 	}
-	// TODO: support for ircv3 msgid's
+	if queued {
+		return msg.ID, nil
+	}
 	return "", nil
 }
 
@@ -337,6 +374,12 @@ func (b *Birc) doSend() {
 
 		<-throttle.C
 		username := msg.Username
+		if b.GetBool("UseRoleplay") && msg.Event != config.EventNoticeIRC {
+			if err := b.sendIRCLine(roleplayLine(msg), msg); err != nil {
+				b.Log.WithError(err).Warn("Error sending IRC roleplay message")
+			}
+			continue
+		}
 		// Optional support for the proposed RELAYMSG extension, described at
 		// https://github.com/jlu5/ircv3-specifications/blob/master/extensions/relaymsg.md
 		// nolint:nestif
@@ -360,13 +403,13 @@ func (b *Birc) doSend() {
 
 				if msg.Event == config.EventUserAction {
 					if !b.GetBool("MessageSplit") {
-						err := b.i.Cmd.SendRawf("RELAYMSG %s %s :\x01ACTION %s\x01", msg.Channel, username, text)
+						err := b.sendIRCLine(fmt.Sprintf("RELAYMSG %s %s :\x01ACTION %s\x01", msg.Channel, username, text), msg)
 						if err != nil {
 							b.Log.Warn("Error in SendRawf")
 						}
 					} else {
 						cmdline := fmt.Sprintf("RELAYMSG %s %s :\x01ACTION %s\x01\r\n", msg.Channel, username, text)
-						err := b.i.Cmd.SendRawNoSplit(cmdline)
+						err := b.sendIRCLine(cmdline, msg)
 						if err != nil {
 							b.Log.Warn("Error in SendRawNoSplit")
 						}
@@ -374,13 +417,13 @@ func (b *Birc) doSend() {
 				} else {
 					b.Log.Debugf("Sending RELAYMSG to channel %s: nick=%s", msg.Channel, username)
 					if !b.GetBool("MessageSplit") {
-						err := b.i.Cmd.SendRawf("RELAYMSG %s %s :%s", msg.Channel, username, text)
+						err := b.sendIRCLine(fmt.Sprintf("RELAYMSG %s %s :%s", msg.Channel, username, text), msg)
 						if err != nil {
 							b.Log.Warn("Error in SendRawf")
 						}
 					} else {
 						cmdline := fmt.Sprintf("RELAYMSG %s %s :%s\r\n", msg.Channel, username, text)
-						err := b.i.Cmd.SendRawNoSplit(cmdline)
+						err := b.sendIRCLine(cmdline, msg)
 						if err != nil {
 							b.Log.Warn("Error in SendRawNoSplit")
 						}
@@ -405,16 +448,8 @@ func (b *Birc) doSend() {
 			b.Log.Debugf("Sending to channel %s", msg.Channel)
 		}
 
-		if !b.GetBool("MessageSplit") {
-			err := b.i.Cmd.SendRaw(cmdline)
-			if err != nil {
-				b.Log.Warn("Error in SendRaw")
-			}
-		} else {
-			err := b.i.Cmd.SendRawNoSplit(cmdline + "\r\n")
-			if err != nil {
-				b.Log.Warn("Error in SendRawNoSplit")
-			}
+		if err := b.sendIRCLine(cmdline, msg); err != nil {
+			b.Log.Warn("Error sending IRC message")
 		}
 	}
 }
@@ -481,6 +516,9 @@ func (b *Birc) getClient() (*girc.Client, error) {
 		Debug:         debug,
 		SupportedCaps: map[string][]string{"overdrivenetworks.com/relaymsg": nil, "draft/relaymsg": nil},
 	})
+	if b.GetBool("PreserveThreading") {
+		i.Config.SupportedCaps["echo-message"] = nil
+	}
 
 	return i, nil
 }
@@ -552,6 +590,13 @@ func (b *Birc) handlePrefix(msg *config.Message) int {
 	// account for spaces, command names, and other padding
 	// TODO: make these len()'s into constants?  But the go compiler does that anyway, so no performance loss here
 	switch {
+	case b.GetBool("UseRoleplay") && msg.Event != config.EventNoticeIRC:
+		// Reserve the default NPC mask and optional " (botnick)" suffix that
+		// Ergo adds to delivered messages, as well as NPCA's ACTION wrapper.
+		prefix = max(prefix, len(msg.Username)+2*len(b.Nick)+len(msg.Channel)+len(":**!@npc.fakeuser.invalid PRIVMSG  : ()\r\n"))
+		if msg.Event == config.EventUserAction {
+			prefix += len("\x01ACTION \x01")
+		}
 	case b.GetBool("UseRelayMsg"):
 		switch msg.Event {
 		case config.EventUserAction:
@@ -567,7 +612,7 @@ func (b *Birc) handlePrefix(msg *config.Message) int {
 		prefix += len("PRIVMSG  :")
 	}
 
-	if !b.GetBool("UseRelayMsg") && b.GetBool("Colornicks") {
+	if !b.GetBool("UseRelayMsg") && !b.GetBool("UseRoleplay") && b.GetBool("Colornicks") {
 		// Separate colors for different fields (label, proto, nick, etc)
 		userslice := strings.FieldsFunc(msg.Username, func(r rune) bool {
 			return r == '\u0020' // split only on regular space; ignore NBSP, tab, newline
@@ -598,8 +643,17 @@ func (b *Birc) ircHandlePanic() {
 }
 
 func (b *Birc) skipPrivMsg(event girc.Event) bool {
+	if forwardChannelEvent(event) {
+		return true
+	}
+	if event.Source == nil || len(event.Params) < 2 {
+		return true
+	}
 	// Our nick can be changed
 	b.Nick = b.i.GetNick()
+	if b.GetBool("UseRoleplay") && ownRoleplayEcho(event, b.Nick) {
+		return true
+	}
 
 	// freenode doesn't send 001 as first reply
 	if event.Command == "NOTICE" && len(event.Params) != 2 {

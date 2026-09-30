@@ -268,6 +268,31 @@ Bot may need to be channel operator to use RELAYMSG.
   UseRelayMsg=true
   ```
 
+## UseRoleplay
+
+Use Ergo's `NPC` and `NPCA` commands to send messages and actions from virtual
+nicknames with one bot connection. Defaults to `false`; cannot be combined with
+`UseRelayMsg`. `RemoteNickFormat` supplies the name; whitespace and reserved
+characters become hyphens. Servers without `UTF8MAPPING` in ASCII/RFC1459 mode
+also replace non-ASCII characters; include `{USERID}` to retain a unique name.
+`Colornicks` is ignored. Long messages are split even
+when `MessageSplit=false` because IRC libraries cannot split NPC correctly.
+
+```toml
+UseRoleplay=true
+RemoteNickFormat="{NICK}-{USERID}"
+```
+
+Enable `roleplay.enabled` in Ergo and channel mode `+E`. Keep Ergo's default
+`npc-nick-mask` (`*%s*!%s@npc.fakeuser.invalid`), which identifies the bot's own
+echoes. `roleplay.require-oper` and `roleplay.require-chanops` must permit the
+bot to send. `roleplay.add-suffix` may be either true or false.
+
+NPC does not propagate client-only reply tags; outbound replies use text quotes.
+For native IRCv3 replies, use the existing `UseRelayMsg` transport instead.
+See [OneBot roleplay mentions](../onebot/README.md#ergo-roleplay-虚拟昵称) for
+mention syntax and cache scope.
+
 ## UseRelayFallback
 
 Enable to replace empty post-sanitizing relayed nick with a fallback.

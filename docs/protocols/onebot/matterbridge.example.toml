@@ -1,0 +1,38 @@
+[onebot.qq]
+Server = "ws://127.0.0.1:3001/"
+Token = "replace-onebot-token"
+RemoteNickFormat = "[{PROTOCOL}] <{NICK}> "
+# @QQ号 或 @目标群名片/昵称 会转成原生提及；[] 关闭，加入 "everyone" 开启 @全体成员 / @all。
+AllowMention = ["users"]
+
+[irc.local]
+Server = "irc.example.org:6697"
+UseTLS = true
+Nick = "qq-bridge"
+Charset = "utf-8"
+RemoteNickFormat = "[{PROTOCOL}] <{NICK}> "
+MessageSplit = true
+MessageDelay = 1300
+MessageQueue = 100
+# 合并转发临时频道等待首位读者的秒数；读者全部离开后立即退出。
+ForwardChannelTimeout = 300
+# QQ 正文 @IRC昵称 转成 IRC 昵称文字；默认关闭。
+ReverseMention = false
+# 开启 ReverseMention 后，QQ 原生 @机器人 时固定提醒此 IRC 用户；空值不映射 @bot。
+BotMentionTarget = ""
+
+[[gateway]]
+name = "community"
+enable = true
+
+[[gateway.inout]]
+account = "onebot.qq"
+channel = "123456789"
+
+[[gateway.inout]]
+account = "onebot.qq"
+channel = "987654321"
+
+[[gateway.inout]]
+account = "irc.local"
+channel = "#community"
