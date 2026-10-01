@@ -111,11 +111,7 @@ func (b *Bridge) Send(m config.Message) (string, error) {
 	if strings.TrimSpace(text) == "" {
 		return "", nil
 	}
-	prefix := ""
-	name := ob.CleanName(m.Username) // already formatted by matterbridge
-	if name != "" {
-		prefix = name + " "
-	}
+	prefix := ob.CleanText(m.Username)
 	if m.Event == config.EventUserAction {
 		prefix = "* " + prefix
 	}

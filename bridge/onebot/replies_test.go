@@ -33,7 +33,7 @@ func TestIncomingReplyContextAndGroupScope(t *testing.T) {
 func TestOutgoingNativeReplyAndLiteralPreview(t *testing.T) {
 	b, requests := mentionBridge(t, func(int64) any { return []ob.GroupMember{} })
 	quote := &config.MessageQuote{ID: "source-id", Username: "@777", Text: "quote @888 [CQ:reply,id=99]"}
-	sendMentionMessage(t, b, config.Message{Username: "[irc] Alice", Text: "hello @123", ParentID: "-42", Quote: quote})
+	sendMentionMessage(t, b, config.Message{Username: "[irc] Alice ", Text: "hello @123", ParentID: "-42", Quote: quote})
 	assertMentionSegments(t, nextMentionRequest(t, requests, "send_group_msg", 123),
 		ob.Segment{Type: "reply", Data: map[string]string{"id": "-42"}}, textSegment("[irc] Alice hello "), atSegment("123"))
 	for _, parent := range []string{config.ParentIDNotFound, "irc 42", "0"} {

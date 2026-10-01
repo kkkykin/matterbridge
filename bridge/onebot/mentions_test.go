@@ -181,7 +181,7 @@ func assertMentionSegments(t *testing.T, request mentionRequest, want ...ob.Segm
 func TestOutgoingMentionsAndLiteralMetadata(t *testing.T) {
 	b, requests := mentionBridge(t, func(int64) any { return []ob.GroupMember{} })
 	sendMentionMessage(t, b, config.Message{
-		Username: "[irc] @999", Event: config.EventUserAction,
+		Username: "[irc] @999 ", Event: config.EventUserAction,
 		Text:  "hello @123456 [CQ:at,qq=all] @all",
 		Extra: map[string][]any{"file": {config.FileInfo{Name: "@777", URL: "https://example.org/@888", Comment: "@666"}}},
 	})
@@ -326,3 +326,78 @@ func TestIncomingMentionDisplayKeepsRewrittenBody(t *testing.T) {
 		t.Fatalf("overwrote body: %+v", m)
 	}
 }
+
+func TestRemoteNickFormatPrefixFormatting(t *testing.T) {
+	b, requests := mentionBridge(t, func(int64) any { return []ob.GroupMember{} })
+	tests := []struct {
+		name     string
+		username string
+		text     string
+		event    string
+		want     string
+	}{
+		{
+			name:     "trailing space in format is preserved",
+			username: "[irc] <alice> ",
+			text:     "hello",
+			want:     "[irc] <alice> hello",
+		},
+		{
+			name:     "no trailing space in format does not append space",
+			username: "[irc] <alice>",
+			text:     "hello",
+			want:     "[irc] <alice>hello",
+		},
+		{
+			name:     "colon separator without space",
+			username: "<alice>:",
+			text:     "hello",
+			want:     "<alice>:hello",
+		},
+		{
+			name:     "colon separator with space",
+			username: "<alice>: ",
+			text:     "hello",
+			want:     "<alice>: hello",
+		},
+		{
+			name:     "newline separator is preserved",
+			username: "<alice>\n",
+			text:     "hello",
+			want:     "<alice>\nhello",
+		},
+		{
+			name:     "empty username has no prefix",
+			username: "",
+			text:     "hello",
+			want:     "hello",
+		},
+		{
+			name:     "user action with space in username",
+			username: "[irc] <alice> ",
+			text:     "waves",
+			event:    config.EventUserAction,
+			want:     "* [irc] <alice> waves",
+		},
+		{
+			name:     "user action without space in username",
+			username: "[irc] <alice>",
+			text:     "waves",
+			event:    config.EventUserAction,
+			want:     "* [irc] <alice>waves",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sendMentionMessage(t, b, config.Message{
+				Username: tc.username,
+				Text:     tc.text,
+				Event:    tc.event,
+			})
+			req := nextMentionRequest(t, requests, "send_group_msg", 123)
+			assertMentionSegments(t, req, textSegment(tc.want))
+		})
+	}
+}
+
