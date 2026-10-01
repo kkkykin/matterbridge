@@ -1,6 +1,7 @@
 package onebot
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -271,5 +272,57 @@ func TestOutgoingAllowMention(t *testing.T) {
 			}
 			assertMentionSegments(t, nextMentionRequest(t, requests, "send_group_msg", 123), tc.want...)
 		})
+	}
+}
+
+//nolint:gosmopolitan // Check native QQ display names and literal text boundaries.
+func TestIncomingMemberDisplayNames(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		members any
+		want    string
+	}{
+		{"card", []ob.GroupMember{{UserID: 123456, Card: "群名片", Nickname: "昵称"}}, "@群名片"},
+		{"nickname", []ob.GroupMember{{UserID: 123456, Card: " ", Nickname: "昵称"}}, "@昵称"},
+		{"empty", []ob.GroupMember{{UserID: 123456}}, "@123456"},
+		{"unknown", []ob.GroupMember{}, "@123456"},
+		{"failure", errors.New("failed"), "@123456"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, requests := mentionBridge(t, func(int64) any { return tc.members })
+			for attempt := 0; attempt < 2; attempt++ {
+				m, ok := b.incoming(ob.Event{PostType: "message", MessageType: "group", GroupID: 123, SelfID: 999, UserID: 888,
+					Message: json.RawMessage(`[{"type":"at","data":{"qq":"123456"}},{"type":"text","data":{"text":" @123456 "}},{"type":"at","data":{"qq":"999"}},{"type":"at","data":{"qq":"all"}}]`)})
+				if !ok {
+					t.Fatal("message rejected")
+				}
+				b.enrichMentions(context.Background(), b.client, 123, &m)
+				if attempt == 0 {
+					nextMentionRequest(t, requests, "get_group_member_list", 123)
+				}
+				if want := tc.want + " @123456 @999@全体成员"; m.Text != want {
+					t.Fatalf("got %q; want %q", m.Text, want)
+				}
+				var body strings.Builder
+				for _, part := range m.MentionParts {
+					body.WriteString(part.Text)
+				}
+				if body.String() != m.Text || m.MentionParts[0].Kind != config.MentionNative || m.MentionParts[2].Kind != config.MentionBot {
+					t.Fatalf("lost mention boundaries: %+v", m)
+				}
+				m.Username = ""
+				sendMentionMessage(t, b, m)
+				assertMentionSegments(t, nextMentionRequest(t, requests, "send_group_msg", 123), atSegment("123456"), textSegment(" "), atSegment("123456"), textSegment(" "), atSegment("999"), textSegment("@全体成员"))
+			}
+		})
+	}
+}
+
+func TestIncomingMentionDisplayKeepsRewrittenBody(t *testing.T) {
+	b := testBridge(t)
+	m := config.Message{Text: "rewritten", MentionParts: []config.MentionPart{{Text: "@123", Kind: config.MentionNative}}}
+	b.enrichMentions(context.Background(), nil, 123, &m)
+	if m.Text != "rewritten" {
+		t.Fatalf("overwrote body: %+v", m)
 	}
 }

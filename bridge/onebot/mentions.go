@@ -18,6 +18,7 @@ var mentionTokens = regexp.MustCompile(`\[CQ:[^\]]*\]|(?:[a-zA-Z][a-zA-Z0-9+.-]*
 
 type memberCache struct {
 	names   map[string]string // An empty ID marks an ambiguous name.
+	display map[string]string // QQ ID to card, falling back to nickname.
 	expires time.Time
 }
 
@@ -59,6 +60,10 @@ func (b *Bridge) outgoingMessageMentions(ctx context.Context, client *ob.Client,
 	users, _ := b.allowedMentions()
 	var segments []ob.Segment
 	for _, part := range msg.MentionParts {
+		if part.Kind == config.MentionNative && part.UserID != "" {
+			segments = append(segments, b.outgoingMentions(ctx, client, group, "@"+part.UserID)...)
+			continue
+		}
 		if part.Kind == config.MentionText || part.Kind == config.MentionBot || part.Kind == config.MentionNative {
 			segments = append(segments, b.outgoingMentions(ctx, client, group, part.Text)...)
 			continue
@@ -75,20 +80,25 @@ func (b *Bridge) outgoingMessageMentions(ctx context.Context, client *ob.Client,
 }
 
 func (b *Bridge) groupMemberNames(ctx context.Context, client *ob.Client, group int64) map[string]string {
+	return b.groupMembers(ctx, client, group).names
+}
+
+func (b *Bridge) groupMembers(ctx context.Context, client *ob.Client, group int64) memberCache {
 	b.mu.Lock()
 	cached := b.members[group]
 	b.mu.Unlock()
 	if time.Now().Before(cached.expires) {
-		return cached.names
+		return cached
 	}
 	// A failed lookup should still leave time to deliver the message as text.
 	lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	members, err := client.GroupMembers(lookupCtx, group)
 	names := make(map[string]string)
+	display := make(map[string]string)
 	ttl := 5 * time.Minute
 	if err != nil {
-		b.Log.WithError(err).Warnf("OneBot group %d member lookup failed; named mentions stay text", group)
+		b.Log.WithError(err).Warnf("OneBot group %d member lookup failed; mentions keep their original text", group)
 		ttl = 30 * time.Second
 	} else {
 		for _, member := range members {
@@ -96,6 +106,11 @@ func (b *Bridge) groupMemberNames(ctx context.Context, client *ob.Client, group 
 				continue
 			}
 			id := strconv.FormatInt(int64(member.UserID), 10)
+			name := ob.CleanName(member.Card)
+			if name == "" {
+				name = ob.CleanName(member.Nickname)
+			}
+			display[id] = name
 			for _, name := range []string{member.Card, member.Nickname} {
 				name = ob.CleanName(name)
 				if name == "" {
@@ -109,12 +124,13 @@ func (b *Bridge) groupMemberNames(ctx context.Context, client *ob.Client, group 
 			}
 		}
 	}
+	cached = memberCache{names: names, display: display, expires: time.Now().Add(ttl)}
 	b.mu.Lock()
 	if client == b.client && ctx.Err() == nil {
-		b.members[group] = memberCache{names: names, expires: time.Now().Add(ttl)}
+		b.members[group] = cached
 	}
 	b.mu.Unlock()
-	return names
+	return cached
 }
 
 // parseMentions reports whether a group member lookup could resolve more names.
@@ -206,4 +222,39 @@ func appendText(segments *[]ob.Segment, text string) {
 		return
 	}
 	*segments = append(*segments, ob.Segment{Type: "text", Data: map[string]string{"text": text}})
+}
+
+// Resolve only native member mentions; typed text and @bot keep their semantics.
+func (b *Bridge) enrichMentions(ctx context.Context, client *ob.Client, group int64, msg *config.Message) {
+	var original strings.Builder
+	for _, part := range msg.MentionParts {
+		original.WriteString(part.Text)
+	}
+	if original.String() != msg.Text {
+		return
+	}
+	var members memberCache
+	loaded := false
+	var text strings.Builder
+	for i := range msg.MentionParts {
+		part := &msg.MentionParts[i]
+		if part.Kind == config.MentionNative {
+			id := strings.TrimPrefix(part.Text, "@")
+			n, err := strconv.ParseInt(id, 10, 64)
+			if err == nil && n > 0 && strconv.FormatInt(n, 10) == id {
+				if !loaded {
+					members = b.groupMembers(ctx, client, group)
+					loaded = true
+				}
+				if name := members.display[id]; name != "" {
+					part.UserID = id
+					part.Text = "@" + name
+				}
+			}
+		}
+		text.WriteString(part.Text)
+	}
+	if len(msg.MentionParts) > 0 {
+		msg.Text = text.String()
+	}
 }

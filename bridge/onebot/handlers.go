@@ -22,6 +22,7 @@ func (b *Bridge) receive(ctx context.Context, client *ob.Client) {
 			if !ok {
 				continue
 			}
+			b.enrichMentions(ctx, client, int64(e.GroupID), &m)
 			b.enrichReply(ctx, client, e.GroupID, &m)
 			b.enrichForwards(ctx, client, e, &m)
 			select {
