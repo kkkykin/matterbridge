@@ -125,7 +125,7 @@ func (b *Birc) incomingReply(event girc.Event, message *config.Message) {
 	if message.ID == "" {
 		message.ID = ircLocalIDPrefix + rand.Text()
 	}
-	for _, tag := range []string{"+draft/reply", "draft/reply"} {
+	for _, tag := range []string{"+reply", "+draft/reply", "draft/reply"} {
 		if parent, ok := event.Tags.Get(tag); ok && validIRCMessageID(parent) {
 			message.ParentID, message.Quote = b.replies.parent(message.Channel, parent)
 			break

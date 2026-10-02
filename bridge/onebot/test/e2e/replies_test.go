@@ -100,7 +100,7 @@ channel="456"
 		t.Fatal("bridge send is missing echo correlation")
 	}
 	// The server delivers its own echo before the next probe command.
-	irc.send(t, "@+draft/reply="+qqOnIRCID+" PRIVMSG #reply :IRC replies to QQ copy\r\n")
+	irc.send(t, "@+reply="+qqOnIRCID+" PRIVMSG #reply :IRC replies to QQ copy\r\n")
 	_ = replyIRCMessage(t, irc, "IRC replies to QQ copy")
 	replyActions(t, ob, map[int64]string{123: "902", 456: qqCopies[456]}, "[irc] <probe> IRC replies to QQ copy")
 

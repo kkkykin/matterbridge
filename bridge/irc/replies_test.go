@@ -74,6 +74,26 @@ func TestIRCIncomingReplyAndLiteralFallback(t *testing.T) {
 	}
 }
 
+func TestIRCIncomingReplyTags(t *testing.T) {
+	for _, tags := range []string{
+		"+reply=server-parent",
+		"+draft/reply=server-parent",
+		"draft/reply=server-parent",
+		"+draft/reply=other;+reply=server-parent",
+	} {
+		t.Run(tags, func(t *testing.T) {
+			b := replyTestBridge(t)
+			b.replies.remember(config.Message{ID: "mb-parent", Channel: "#a", Username: "Alice", Text: "说说"}, "")
+			b.replies.echo("#a", "mb-parent", "server-parent")
+			m := config.Message{Channel: "#a", Username: "Bob", Text: "想说什么"}
+			b.incomingReply(girc.Event{Tags: girc.ParseTags("msgid=server-child;" + tags)}, &m)
+			if m.ID != "server-child" || m.ParentID != "mb-parent" || m.Quote == nil || m.Quote.Text != "说说" {
+				t.Fatalf("bad reply metadata: %+v", m)
+			}
+		})
+	}
+}
+
 func TestIRCEchoCannotBeSpoofedByAnotherNick(t *testing.T) {
 	b := replyTestBridge(t)
 	b.replies.remember(config.Message{ID: "mb-parent", Channel: "#a", Text: "parent"}, "")
