@@ -104,6 +104,9 @@ func New(cfg *bridge.Config) bridge.Bridger {
 }
 
 func (b *Birc) Connect() error {
+	if err := validateForwardChannelURL(b.GetString("ForwardChannelURL")); err != nil {
+		return err
+	}
 	if target := b.GetString("BotMentionTarget"); b.GetBool("ReverseMention") && target != "" && !validMentionNick(target) {
 		return fmt.Errorf("invalid BotMentionTarget %q: expected a single IRC nick without @", target)
 	}

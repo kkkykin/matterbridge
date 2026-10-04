@@ -17,6 +17,11 @@ import (
 )
 
 func TestForwardChannels(t *testing.T) {
+	t.Run("join", func(t *testing.T) { testForwardChannels(t, "") })
+	t.Run("public_url", func(t *testing.T) { testForwardChannels(t, "irc://irc.example.com:16667/") })
+}
+
+func testForwardChannels(t *testing.T, publicURL string) {
 	address := startErgo(t, "precis", func(cfg map[string]any) {
 		hash, err := bcrypt.GenerateFromPassword([]byte("forward-test"), bcrypt.MinCost)
 		if err != nil {
@@ -51,6 +56,7 @@ Charset="utf-8"
 MessageDelay=10
 MessageQueue=10
 ForwardChannelTimeout=2
+ForwardChannelURL=%q
 RemoteNickFormat="<{NICK}> "
 [[gateway]]
 name="forward"
@@ -61,22 +67,43 @@ channel="#qq"
 [[gateway.inout]]
 account="onebot.qq"
 channel="123"
-`, ob.url, address)))
+`, ob.url, address, publicURL)))
 	p := start(t, dir, "forward-matterbridge", requiredEnv(t, "E2E_RELAY"), "-conf", path)
 	peer := receive(t, ob.connections)
 	reader.wait(t, func(s string) bool { return strings.Contains(s, ":qq-bridge!") && strings.Contains(s, " JOIN #qq") })
 	waitLog(t, p.logPath, "Now relaying messages", 1)
 	seq := int64(8000)
+	keys := map[string]string{}
+	entryPrefix := "/join "
+	separator := " "
+	if publicURL != "" {
+		entryPrefix = strings.TrimSuffix(publicURL, "/") + "/"
+		separator = "?"
+	}
+	entry := regexp.MustCompile(regexp.QuoteMeta(entryPrefix) + `(#mb-forward-[a-z2-7]+)` + regexp.QuoteMeta(separator) + `([A-Z2-7]+)`)
 	open := func(id string) string {
 		seq++
 		peer.send(t, event(123, seq, 888, []segment{{Type: "forward", Data: map[string]string{"id": id}}}))
 		line := reader.wait(t, func(s string) bool {
-			return strings.Contains(s, " PRIVMSG #qq ") && strings.Contains(s, "/join #mb-forward-")
+			return strings.Contains(s, " PRIVMSG #qq ") && strings.Contains(s, "查看合并转发：")
 		})
-		return regexp.MustCompile(`#mb-forward-[a-z2-7]+`).FindString(line)
+		match := entry.FindStringSubmatch(line)
+		if match == nil {
+			t.Fatalf("unexpected forward entry: %s", line)
+		}
+		keys[match[1]] = match[2]
+		return match[1]
+	}
+	join := func(c *ircClient, channel string) {
+		c.send(t, "JOIN "+channel+" "+keys[channel]+"\r\n")
 	}
 	channel := open("outer")
+	// The advertised key must already be active when the entry reaches readers.
 	reader.send(t, "JOIN "+channel+"\r\n")
+	reader.wait(t, func(s string) bool { return strings.Contains(s, " 475 reader "+channel+" ") })
+	reader.send(t, "JOIN "+channel+" wrong-key\r\n")
+	reader.wait(t, func(s string) bool { return strings.Contains(s, " 475 reader "+channel+" ") })
+	join(reader, channel)
 	transcript := forwardTranscript(t, reader, channel)
 	for _, want := range []string{"Alice", "hello 转发", "↳ Bob", "https://example.com/image.png", "nested body", "↳ ↳ Carol", "↳ ↳ ↳ Dave", "deep body"} {
 		if !strings.Contains(transcript, want) {
@@ -87,7 +114,9 @@ channel="123"
 	reader.send(t, "PRIVMSG "+channel+" :must not route to QQ\r\n")
 	reader.wait(t, func(s string) bool { return strings.Contains(s, " 404 ") })
 	second := forwardReader(t, address, "second")
-	second.send(t, "JOIN "+channel+"\r\n")
+	second.send(t, "JOIN "+channel+" wrong-key\r\n")
+	second.wait(t, func(s string) bool { return strings.Contains(s, " 475 second "+channel+" ") })
+	join(second, channel)
 	if got := forwardTranscript(t, second, channel); got != transcript {
 		t.Fatal("late reader did not get the whole transcript")
 	}
@@ -100,7 +129,7 @@ channel="123"
 	// A kicked viewer bot must discard the room rather than rejoin it through
 	// the normal gateway KICK handler.
 	channel = open("outer")
-	reader.send(t, "JOIN "+channel+"\r\n")
+	join(reader, channel)
 	forwardTranscript(t, reader, channel)
 	reader.send(t, "OPER forward-test forward-test\r\n")
 	reader.wait(t, func(s string) bool { return strings.Contains(s, " 381 renamed ") })
@@ -111,7 +140,7 @@ channel="123"
 	reader.send(t, "PART "+channel+"\r\n")
 	awaitForwardGone(t, reader, "renamed", channel)
 	channel = open("outer")
-	reader.send(t, "JOIN "+channel+"\r\n")
+	join(reader, channel)
 	forwardTranscript(t, reader, channel)
 	reader.send(t, "PART "+channel+"\r\n")
 	awaitForwardGone(t, reader, "renamed", channel)
@@ -120,7 +149,7 @@ channel="123"
 	time.Sleep(2200 * time.Millisecond)
 	forwardNames(t, reader, "renamed", channel, false)
 	channel = open("missing")
-	reader.send(t, "JOIN "+channel+"\r\n")
+	join(reader, channel)
 	if got := forwardTranscript(t, reader, channel); !strings.Contains(got, "读取失败") {
 		t.Fatal(got)
 	}
@@ -128,7 +157,7 @@ channel="123"
 	awaitForwardGone(t, reader, "renamed", channel)
 	if fixtures["live"] != nil {
 		channel = open("live")
-		reader.send(t, "JOIN "+channel+"\r\n")
+		join(reader, channel)
 		got := forwardTranscript(t, reader, channel)
 		if strings.Contains(got, "读取失败") || strings.Contains(got, "无法解析") {
 			t.Fatal("live transcript failed")
@@ -201,6 +230,10 @@ func awaitForwardGone(t *testing.T, c *ircClient, nick, channel string) {
 			e := girc.ParseEvent(s)
 			if e == nil {
 				return false
+			}
+			if e.Command == girc.ERR_BADCHANNELKEY && len(e.Params) >= 2 && e.Params[1] == channel {
+				found = true // The keyed room has not been cleaned up yet.
+				return true
 			}
 			if e.Command == girc.RPL_NAMREPLY && strings.Contains(e.Last(), "qq-bridge") {
 				found = true

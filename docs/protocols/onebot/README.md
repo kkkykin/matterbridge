@@ -76,9 +76,11 @@ channel = "987654321"
 
 收到原生 `forward` 段后，通过 [`get_forward_msg`](https://github.com/botuniverse/onebot-11/blob/master/api/public.md#get_forward_msg-获取合并转发消息) 的字符串参数 `id` 读取内容。支持官方 `message` / `node` 数组，以及 NapCat 实际返回的 `messages` 消息对象数组。嵌套转发优先展开 `data.content` 中已有的消息，缺少内联内容时才按 ID 查询：NapCat 的内层 ID 不一定能用于 API。也支持内联 `node` 节点。CQ 字符串和消息段数组均可识别；转义后的 CQ 文字不会触发读取。
 
-主频道显示 `[查看合并转发：/join #mb-forward-…]`。进入后，bot 按顺序发送作者、正文和媒体链接；每有新读者进入会从头重播，已有读者也会看到重播。无需客户端支持 IRC 历史消息。查看窗口使用普通 bot 消息，不依赖 `UseRelayMsg`，不把转发节点注册为可 @ 的 QQ 用户。
+主频道默认显示 `[查看合并转发：/join #mb-forward-… 随机密码]`。在对应的 `[irc.local]` 配置 `ForwardChannelURL = "irc://irc.example.com"` 后，显示 `[查看合并转发：irc://irc.example.com/#mb-forward-…?随机密码]`。每个 IRC 桥可分别指定对外地址，与 matterbridge 连接使用的 `Server` 和 `UseTLS` 独立，适用于反向代理；公开入口使用 TLS 时填写 `ircs://`，也可显式指定端口（如 `ircs://irc.example.com:6697`）。只填写协议、主机和可选端口，不带频道或密码。链接打开及自动传入密码取决于 IRC 客户端支持；也可在对应网络手动执行 `/join 频道 密码`。
 
-- 临时频道设置 `+snmt`（隐藏、禁止外部发言、只读、仅频道管理员修改主题），使用随机名称；不要把保留前缀 `#mb-forward-` 加进 gateway。
+进入后，bot 按顺序发送作者、正文和媒体链接；每有新读者进入会从头重播，已有读者也会看到重播。无需客户端支持 IRC 历史消息。查看窗口使用普通 bot 消息，不依赖 `UseRelayMsg`，不把转发节点注册为可 @ 的 QQ 用户。
+
+- 临时频道设置 `+snmtk`（隐藏、禁止外部发言、只读、仅频道管理员修改主题、密码保护），使用随机名称和独立随机密码；入口中的密码是真实的频道 `+k`，缺少密码或密码错误无法进入。不要把保留前缀 `#mb-forward-` 加进 gateway。
 - 最后一位读者 PART、QUIT 或被 KICK 后，bot 自动 PART 并丢弃余下的展示队列；改名不会遗留虚假的成员。bot 被踢或 IRC 断线时丢弃窗口，不自动重建。
 - 刚创建的频道只有 bot，默认留 **300 秒**等待首位读者；无人进入则自动 PART。在 `[irc.local]` 设置 `ForwardChannelTimeout = 300` 可调整等待秒数。清理后入口失效。
 - 每个 IRC 账号最多同时打开 32 个窗口，所有窗口共用按 `MessageDelay` 限速的展示队列；每个窗口最多展示 1000 行。
@@ -211,6 +213,6 @@ E2E_ERGO=/absolute/path/to/ergo bash bridge/onebot/test-e2e.sh
 
 下载及构建缓存放在 `bridge/onebot/.cache/e2e`，可用 `E2E_CACHE_DIR` 覆盖。默认对测试驱动启用 `-race`，`E2E_RACE=1` 会同时检测整个程序。完整程序竞态检查可能报告上游 IRC 适配器已有的竞态。
 
-合并转发测试覆盖官方/NapCat 返回格式、嵌套 API 引用与内联内容、多人重播、改名、PART/QUIT 清理、bot 被 KICK 后不重建，以及无人进入时超时清理。设置 `E2E_LIVE_FORWARD_FILE=/path/to/response-data.json` 可把真实 `get_forward_msg` 响应的 `data` 对象送入本地 Ergo 测试，并检查内联嵌套各层的正文；测试不会向真实 QQ 发消息。
+合并转发测试覆盖独立对外地址生成的链接、默认 `/join` 入口、频道密码校验、官方/NapCat 返回格式、嵌套 API 引用与内联内容、多人重播、改名、PART/QUIT 清理、bot 被 KICK 后不重建，以及无人进入时超时清理。设置 `E2E_LIVE_FORWARD_FILE=/path/to/response-data.json` 可把真实 `get_forward_msg` 响应的 `data` 对象送入本地 Ergo 测试，并检查内联嵌套各层的正文；测试不会向真实 QQ 发消息。
 
 协议代码集中在 `bridge/onebot/`，注册入口为 `gateway/bridgemap/bonebot.go`；WebSocket 客户端维持当前独立实现，无须重写公共桥接接口。新增消息元数据类型在 `bridge/config/message.go`，上游 `Message` 仅增加所需字段。引用映射与回退集中在 `gateway/replies.go`，保留上游已有的其他协议线程处理：新增映射必须按账号、频道和消息 ID 隔离，并能从桥接副本找回原消息，不能直接复用上游仅按协议和 ID 索引的缓存。IRC 的回复、提及、昵称映射和拆分逻辑分别在独立文件中，复用上游 RELAYMSG 发送逻辑，避免继续扩大 `irc.go` 与 `gateway.go` 的改动范围。

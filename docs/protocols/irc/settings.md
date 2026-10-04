@@ -41,6 +41,28 @@ Debug log verbosity.
   DebugLevel=1
   ```
 
+## ForwardChannelURL
+
+Public IRC address used in merged-forward viewing links. Set it separately in
+each `[irc.name]` section, for example `ForwardChannelURL="irc://irc.example.com"`.
+It is independent of `Server` and `UseTLS`, so a reverse proxy can expose a
+different hostname, port or TLS setting. Use `ircs://` for a public TLS endpoint;
+an explicit port and a trailing slash are optional. Do not include a channel,
+query or credentials in this setting.
+
+With this set, the entry is `irc://irc.example.com/#mb-forward-…?key`. Every
+temporary channel has its own random `+k` password, included after `?`. Client
+support for opening this link format varies; the equivalent command is
+`/join #mb-forward-… key` on the corresponding network.
+
+- Setting: **OPTIONAL**
+- Default: `""` (display `/join #mb-forward-… key`)
+- Format: *string*
+- Example:
+  ```toml
+  ForwardChannelURL="ircs://irc.example.com:6697"
+  ```
+
 ## JoinDelay
 
 Delay in milliseconds between channel joins.

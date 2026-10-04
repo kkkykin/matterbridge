@@ -16,6 +16,10 @@ MessageDelay = 1300
 MessageQueue = 100
 # 合并转发临时频道等待首位读者的秒数；读者全部离开后立即退出。
 ForwardChannelTimeout = 300
+# 合并转发链接的对外 IRC 地址，与 Server / UseTLS 独立；每个 IRC 桥分别配置。
+# 留空显示 /join 频道 随机密码；设置后显示 irc(s)://地址/#频道?随机密码。
+ForwardChannelURL = ""
+# ForwardChannelURL = "ircs://irc.example.org:6697"
 # QQ 正文 @IRC昵称 转成 IRC 昵称文字；默认关闭。
 ReverseMention = false
 # 开启 ReverseMention 后，QQ 原生 @机器人 时固定提醒此 IRC 用户；空值不映射 @bot。

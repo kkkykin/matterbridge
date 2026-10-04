@@ -3,6 +3,7 @@ package birc
 import (
 	"crypto/rand"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,18 @@ import (
 )
 
 const forwardChannelPrefix = "#mb-forward-"
+
+func validateForwardChannelURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "irc" && u.Scheme != "ircs") || u.Hostname() == "" ||
+		u.User != nil || (u.Path != "" && u.Path != "/") || strings.ContainsAny(raw, "?#") {
+		return fmt.Errorf("invalid ForwardChannelURL: expected irc://host[:port] or ircs://host[:port]")
+	}
+	return nil
+}
 
 type forwardRoom struct {
 	created        time.Time
@@ -79,22 +92,27 @@ func (b *Birc) prepareForwards(message *config.Message) {
 		if !ok || len(forward.Nodes) == 0 {
 			continue
 		}
-		channel := b.forwards.open(forward)
+		channel, key := b.forwards.open(forward)
 		if channel == "" {
 			message.Text += " [临时频道已满，无法展开合并转发]"
 		} else {
-			message.Text += " [查看合并转发：/join " + channel + "]"
+			link := "/join " + channel + " " + key
+			if base := b.GetString("ForwardChannelURL"); base != "" {
+				link = strings.TrimSuffix(base, "/") + "/" + channel + "?" + key
+			}
+			message.Text += " [查看合并转发：" + link + "]"
 		}
 	}
 }
 
-func (f *ircForwards) open(forward *config.MessageForward) string {
+func (f *ircForwards) open(forward *config.MessageForward) (string, string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(f.rooms) >= 32 {
-		return ""
+		return "", ""
 	}
 	channel := forwardChannelPrefix + strings.ToLower(rand.Text())
+	key := rand.Text()
 	room := &forwardRoom{created: time.Now(), readers: map[string]bool{}}
 	room.lines = append(room.lines, fmt.Sprintf("[合并转发：%d 个节点；只读，离开后自动清理]", len(forward.Nodes)))
 	for _, node := range forward.Nodes {
@@ -114,7 +132,10 @@ func (f *ircForwards) open(forward *config.MessageForward) string {
 	room.next = len(room.lines) // Replay only after a reader arrives.
 	f.rooms[channel] = room
 	f.client.Cmd.Join(channel)
-	return channel
+	// Queue the key before publishing the link, so its first reader needs it too.
+	f.client.Cmd.Mode(channel, "+snmtk", key)
+	f.client.Cmd.Topic(channel, "合并转发 · 只读 · 最后一位读者离开后自动清理")
+	return channel, key
 }
 
 func forwardPlain(s string) string {
@@ -195,10 +216,7 @@ func (f *ircForwards) handle(client *girc.Client, event girc.Event) {
 	}
 	switch event.Command {
 	case girc.JOIN:
-		if source == self {
-			client.Cmd.Mode(channel, "+snmt")
-			client.Cmd.Topic(channel, "合并转发 · 只读 · 最后一位读者离开后自动清理")
-		} else if source != "" {
+		if source != self && source != "" {
 			room.readers[source] = true
 			room.visited, room.next = true, 0
 		}

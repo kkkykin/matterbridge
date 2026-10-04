@@ -171,6 +171,7 @@ type Protocol struct {
 	MediaConvertWebPToPNG  bool       // telegram
 	MessageDelay           int        // IRC, time in millisecond to wait between messages
 	ForwardChannelTimeout  int        // IRC, seconds to wait for the first forward reader (default 300)
+	ForwardChannelURL      string     // IRC, public irc(s)://host[:port] for forward links; empty uses /join
 	MessageFormat          string     // telegram
 	MessageLength          int        // IRC, max length of a message allowed, defaults to 512 (counting CRLF)
 	MessagePrefix          int        // IRC, current length of message prefix for bot, not configurable
