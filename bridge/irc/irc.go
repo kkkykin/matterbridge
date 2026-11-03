@@ -345,9 +345,9 @@ func (b *Birc) doConnect() {
 		time.Sleep(60 * time.Second) // Sleep 60 seconds so as not to regress 42wim#267
 		b.i.Handlers.Clear(girc.RPL_WELCOME)
 		b.i.Handlers.Add(girc.RPL_WELCOME, func(client *girc.Client, event girc.Event) {
+			// Update our nick before rejoining; RPL_WELCOME's source is the server.
+			b.Nick = event.Params[0]
 			b.Remote <- config.Message{Username: "system", Text: "rejoin", Channel: "", Account: b.Account, Event: config.EventRejoinChannels}
-			// set our correct nick on reconnect if necessary
-			b.Nick = event.Source.Name
 		})
 	}
 }
