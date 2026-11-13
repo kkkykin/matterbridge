@@ -40,4 +40,4 @@ race_flags=()
 if [[ "${E2E_RACE:-0}" == 1 ]]; then race_flags=(-race); fi
 go build -tags "${BUILD_TAGS:-goolm}" "${race_flags[@]}" -o "$cache_dir/matterbridge" .
 export E2E_RELAY="$cache_dir/matterbridge"
-go test -race -tags "integration,${BUILD_TAGS:-goolm}" -count=1 -v -timeout 180s ./bridge/onebot/test/e2e
+go test -race -tags "integration,${BUILD_TAGS:-goolm}" -count=1 -v -timeout 300s ./bridge/onebot/test/e2e

@@ -117,6 +117,9 @@ func (b *Bridge) Send(m config.Message) (string, error) {
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+
+	images, rendered := b.outgoingFiles(callCtx, client, id, m)
+	text = plainText(rendered)
 	// Only the original body participates in mention matching. The formatted
 	// sender prefix and the attachment descriptions appended by plainText stay literal.
 	body := ob.CleanText(m.Text)
@@ -135,8 +138,23 @@ func (b *Bridge) Send(m config.Message) (string, error) {
 			message = append(message, segment)
 		}
 	}
-	appendText(&message, strings.TrimPrefix(text, body))
-	messageID, err := client.SendGroup(callCtx, id, message)
+
+	var messageID string
+
+	if callCtx.Err() != nil && len(m.Extra["file"]) > 0 {
+		images = nil
+		text = plainText(m)
+		messageID, err = b.sendMediaFallback(ctx, client, id, mediaMessage(message, strings.TrimPrefix(text, body), nil))
+	} else {
+		messageID, err = client.SendGroup(callCtx, id, mediaMessage(message, strings.TrimPrefix(text, body), images))
+	}
+
+	if err != nil && len(images) > 0 {
+		b.Log.Warn("OneBot image send failed; relaying links")
+
+		text = plainText(m)
+		messageID, err = b.sendMediaFallback(ctx, client, id, mediaMessage(message, strings.TrimPrefix(text, body), nil))
+	}
 	if err == nil {
 		b.quotes.Add(quoteKey{id, messageID}, helper.QuotePreview(messageID, m.Username, text))
 	}

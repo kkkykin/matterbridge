@@ -308,6 +308,24 @@ For relayed OneBot users, `@virtual-nick` and a leading `virtual-nick:` resolve
 to QQ mentions. See [OneBot virtual nicknames](../onebot/README.md#ergo-relaymsg-虚拟昵称)
 for mention syntax and cache scope.
 
+## MediaLinkToken / MediaLinkHosts
+
+Opt in to downloading `[token](URL)` or `[token:filename](URL)` links anywhere
+in a message as standard attachments for other gateway destinations. A message
+can contain multiple links and text; `![token](URL)` is also accepted. `MediaLinkToken`
+is empty by default; enabling it requires an exact hostname allowlist in
+`MediaLinkHosts`. Only HTTPS URLs are downloaded. Redirects and private addresses
+are rejected. `MediaLinkTimeout` defaults to 30 seconds for the entire message's
+attachment downloads, including queued links; `MediaDownloadSize` and
+`MediaDownloadBlacklist` also apply. An optional `MediaLinkAccounts` list checks
+the sender's server-issued `account-tag`, rather than their nick.
+
+When enabled, HTTP(S) Markdown links have their label stripped before validation.
+Successful links become attachments in source order; text is retained and failed
+links remain as URLs, without the token. Bare URLs are unchanged. Up to four files
+are downloaded concurrently per IRC account; more links in a message are queued. See
+[IRC upload links](../onebot/README.md#irc-上传链接转附件) for configuration and message examples.
+
 ## UseRelayFallback
 
 Enable to replace empty post-sanitizing relayed nick with a fallback.

@@ -45,6 +45,7 @@ type Birc struct {
 	replies                                   *ircReplies
 	nickMentions                              *ircNickMentions
 	forwards                                  *ircForwards
+	media                                     *ircMedia
 
 	*bridge.Config
 }
@@ -58,6 +59,8 @@ func New(cfg *bridge.Config) bridge.Bridger {
 	b.Config = cfg
 	b.replies = newIRCReplies()
 	b.nickMentions = newIRCNickMentions()
+
+	b.media = newIRCMedia()
 	if !b.IsKeySet("PreserveThreading") {
 		b.SetBool("PreserveThreading", true)
 	}
@@ -104,6 +107,10 @@ func New(cfg *bridge.Config) bridge.Bridger {
 }
 
 func (b *Birc) Connect() error {
+	mediaErr := b.validateMediaLinkConfig()
+	if mediaErr != nil {
+		return mediaErr
+	}
 	if err := validateForwardChannelURL(b.GetString("ForwardChannelURL")); err != nil {
 		return err
 	}

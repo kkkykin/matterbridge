@@ -670,6 +670,8 @@ func (b *Birc) handlePrivMsg(client *girc.Client, event girc.Event) {
 	if event.IsAction() {
 		rmsg.Text = rmsg.Text[8 : len(rmsg.Text)-1]
 	}
+
+	b.handleMediaLink(event, &rmsg)
 	b.incomingReply(event, &rmsg)
 	if b.GetBool("UseRelayMsg") {
 		b.nickMentions.mentions(&rmsg)

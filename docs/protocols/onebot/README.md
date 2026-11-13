@@ -60,7 +60,8 @@ channel = "987654321"
 | --- | --- |
 | 普通文本、Unicode | QQ 文本段；符合规则的 `@` 转成原生提及段 |
 | `user_action` / IRC `/me` | 带 `*` 的动作文本 |
-| matterbridge 附件 | 文件名、HTTP(S) 链接和说明，不下载或重新上传 |
+| 带数据的 matterbridge 附件 | 图片以原生 `image` 段发送，其他文件上传为群文件；保留文件名和说明，失败回退为 HTTP(S) 链接 |
+| 只有 URL 的 matterbridge 附件 | 文件名、HTTP(S) 链接和说明，不自动下载 |
 | QQ 文本 | 带源账号、群号、用户 ID 和消息 ID 的原生消息；群名片优先于昵称 |
 | QQ @、表情 | 可读文本标记 |
 | QQ 回复/引用 | 保留父消息关系；目标支持且消息映射仍在时使用原生引用，否则发送文字摘要 |
@@ -68,9 +69,42 @@ channel = "987654321"
 | QQ 合并转发 | IRC 显示临时频道入口；其他协议保留占位文字 |
 | QQ JSON/XML 卡片 | 占位文字 |
 
-支持接收 CQ 字符串和消息段数组。其他平台发来的 CQ 代码始终作为普通文字，不执行 CQ 中的 @、回复或文件操作。媒体链接可能过期，没有 URL 时只显示标记。暂不支持私聊、群管理通知、撤回、编辑同步、提及和引用以外的原生富文本；仅以 `notice` 上报的群文件也不转发。
+支持接收 CQ 字符串和消息段数组。其他平台发来的 CQ 代码始终作为普通文字，不执行 CQ 中的 @、回复或文件操作。媒体链接可能过期，没有 URL 时只显示标记。暂不支持私聊、群管理通知、撤回、编辑同步和原生卡片发送；仅以 `notice` 上报的群文件也不转发。
 
-机器人自身消息会过滤；重复事件按账号、群和消息 ID 在内存中去重 10 分钟，最多保留 4096 条。路由器负责排除来源频道和选择目标。WebSocket 断线后按 1–30 秒退避重连，并使用 Ping/Pong 检测失联。入站队列上限 256 条，满时丢弃新事件并记录错误；发送最长等待 15 秒，验证回执并返回目标消息 ID。发送失败或超时不会自动重试，没有持久化离线补发。关闭进程沿用 matterbridge 默认信号行为。
+机器人自身消息会过滤；重复事件按账号、群和消息 ID 在内存中去重 10 分钟，最多保留 4096 条。路由器负责排除来源频道和选择目标。WebSocket 断线后按 1–30 秒退避重连，并使用 Ping/Pong 检测失联。入站队列上限 256 条，满时丢弃新事件并记录错误；发送最长等待 15 秒，媒体失败的文字回退另等待最多 5 秒，验证回执并返回目标消息 ID。不会重新上传文件或重发图片，没有持久化离线补发。关闭进程沿用 matterbridge 默认信号行为。
+
+## IRC 上传链接转附件
+
+配置 IRC 账号后，matterbridge 扫描正文中的 `[token](URL)` 或 `[token:文件名](URL)`，逐个校验 token、域名和可选的登录账号，再下载为标准附件，供 gateway 内的其他协议发送。一条消息可以包含多个链接及文字，也接受 `![token](URL)` 图片语法；相邻链接和 URL 中配对的括号均可识别。
+
+```toml
+[general]
+MediaDownloadSize = 10485760 # 10 MiB；同时用于 IRC 下载和 OneBot 上传。
+
+[irc.local]
+# 其余 IRC 设置沿用现有配置；token 为空时关闭链接下载。
+MediaLinkToken = "replace-media-token"
+MediaLinkHosts = ["litter.catbox.moe"]
+MediaLinkTimeout = 30
+# 可选：检查服务器提供的 account-tag，填写 Ergo 登录账号而非昵称。
+# MediaLinkAccounts = ["alice"]
+```
+
+消息中的 token 必须与 `MediaLinkToken` 一致；文件名可省略。
+
+`MediaLinkHosts` 必须是精确主机名，不带协议、端口或通配符；默认不设置白名单，开启 token 后必须配置。只下载 HTTPS 链接，拒绝重定向以及解析到私有、回环、链路本地等非公网地址的主机，直接连接而不使用环境代理。`MediaDownloadBlacklist` 沿用已有的文件名正则黑名单。文件名优先采用消息中的名称，其次采用 `Content-Disposition`，最后取 URL 路径末尾，并清理路径和控制字符。每个附件分别检查响应长度和实际读取量，每个 IRC 账号最多同时下载 4 个文件；同一消息的更多附件排队下载，共用 `MediaLinkTimeout` 的总时间上限（默认 30 秒）。
+
+启用后，HTTP(S) Markdown 链接中的标签会先移除；成功下载的链接从正文移入附件，其他文字保留。token 不匹配、账号或域名不允许、下载超时、过期、超限等情况会在原位置保留 URL，其他附件仍可成功转发，**不会把 token 转发到其他 bridge 或后续回复引用**。不完整标记及动作消息中的 token 也会移除，动作和 NOTICE 不下载附件。普通裸链接不触发下载。token 会出现在源 IRC 频道和历史中；需要限制发送者时设置 `MediaLinkAccounts`，缺少有效 account-tag 时回退为链接。
+
+图文混合示例（单条 IRC 消息）：
+
+```text
+今天的照片：[replace-media-token:one.png](https://litter.catbox.moe/one.png) [replace-media-token:two.png](https://litter.catbox.moe/two.png) 都是在公园拍的。
+```
+
+OneBot 会在同一条消息中发送保留下来的正文和附件说明，再按链接出现的顺序发送所有图片；图片集中在文字后面。
+
+OneBot 只上传来源 bridge 已提供的数据，按实际内容识别 PNG/JPEG/GIF/WebP/BMP 图片，其他文件使用 NapCat 的 `upload_group_file`。两者都通过 `base64://` 传输，无需共享容器目录，也不让 NapCat 再下载原始 URL。超过目标 OneBot 账号 `MediaDownloadSize` 的附件和只有 URL 的附件保留文字链接；建议在 `[general]` 统一设置大小上限，未设置时为 1,000,000 字节。群文件上传是独立动作，返回给 gateway 的消息 ID 属于带发送者和文件名的说明消息；原生图片与说明、引用和提及在同一条消息中发送。媒体失败后只发送文字链接，不重复上传；回执丢失时，QQ 中可能已经存在媒体及额外的回退链接。
 
 ## IRC 合并转发临时频道
 
