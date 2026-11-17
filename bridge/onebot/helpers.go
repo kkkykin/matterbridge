@@ -41,19 +41,25 @@ func plainText(m config.Message) string {
 	if m.Text != "" {
 		parts = append(parts, m.Text)
 	}
-	for _, raw := range m.Extra["file"] {
+	filenames := m.Extra[ircMediaFilename]
+	for i, raw := range m.Extra["file"] {
 		f, ok := raw.(config.FileInfo)
 		if !ok {
 			continue
 		}
-		label := "[文件 " + f.Name + "]"
+		description := []string{"[文件 " + f.Name + "]"}
+		if i < len(filenames) && filenames[i] == false {
+			description = nil
+		}
 		if u, err := url.Parse(f.URL); err == nil && u.Hostname() != "" && u.User == nil && (u.Scheme == "http" || u.Scheme == "https") {
-			label += " " + f.URL
+			description = append(description, f.URL)
 		}
 		if f.Comment != "" && f.Comment != m.Text {
-			label += " " + f.Comment
+			description = append(description, f.Comment)
 		}
-		parts = append(parts, label)
+		if len(description) > 0 {
+			parts = append(parts, strings.Join(description, " "))
+		}
 	}
 	return ob.CleanText(strings.Join(parts, "\n"))
 }

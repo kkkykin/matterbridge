@@ -108,7 +108,7 @@ func (b *Bridge) Send(m config.Message) (string, error) {
 		return "", errors.New("OneBot bridge is not connected")
 	}
 	text := plainText(m)
-	if strings.TrimSpace(text) == "" {
+	if strings.TrimSpace(text) == "" && len(m.Extra["file"]) == 0 {
 		return "", nil
 	}
 	prefix := ob.CleanText(m.Username)

@@ -50,12 +50,15 @@ func TestIRCMediaAttachmentAndReplyFallback(t *testing.T) {
 	defer server.Close()
 
 	b := mediaTestBridge(t, server)
-	for _, name := range []string{"", ":../folder/原名.txt", ":..\\folder\\原名.txt"} {
+	for _, name := range []string{"", ":", ":../folder/原名.txt", ":..\\folder\\原名.txt"} {
 		b.handlePrivMsg(b.i, mediaEvent("[test-token"+name+"]("+server.URL+"/random.txt?x=1&y=2)"))
 
 		m := <-b.Remote
 		if m.Text != "" || len(m.Extra["file"]) != 1 || m.ID != "uploaded" {
 			t.Fatalf("bad attachment message: %+v", m)
+		}
+		if hints := m.Extra["irc_media_filename"]; len(hints) != 1 || hints[0] != (name != "") {
+			t.Fatalf("lost explicit filename hint: %+v", m.Extra)
 		}
 
 		f, ok := m.Extra["file"][0].(config.FileInfo)
@@ -64,7 +67,7 @@ func TestIRCMediaAttachmentAndReplyFallback(t *testing.T) {
 		}
 
 		want := "猫.txt"
-		if name != "" {
+		if name != "" && name != ":" {
 			want = "原名.txt"
 		}
 
@@ -254,6 +257,9 @@ func TestIRCMediaMixedTextPreservesImageOrder(t *testing.T) {
 	if m.Text != "开头  中间  结尾" || len(m.Extra["file"]) != 2 {
 		t.Fatalf("lost caption or attachments: %+v", m)
 	}
+	if hints := m.Extra["irc_media_filename"]; len(hints) != 2 || hints[0] != true || hints[1] != false {
+		t.Fatalf("filename hints are out of order: %+v", m.Extra)
+	}
 
 	for i, want := range []struct{ name, data string }{{"第一张.png", "first"}, {"second.png", "second"}} {
 		file, ok := m.Extra["file"][i].(config.FileInfo)
@@ -328,6 +334,9 @@ func TestIRCMediaPartialFailureAndQuotes(t *testing.T) {
 	m := <-b.Remote
 	if m.Text != "开头 "+missing+" 中间  结尾 "+wrongToken || len(m.Extra["file"]) != 1 {
 		t.Fatalf("lost partial success or fallback: %+v", m)
+	}
+	if hints := m.Extra["irc_media_filename"]; len(hints) != 1 || hints[0] != true {
+		t.Fatalf("failed links shifted filename hints: %+v", m.Extra)
 	}
 
 	e := mediaEvent("reply")

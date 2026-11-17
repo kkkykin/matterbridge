@@ -129,7 +129,7 @@ func (b *Birc) handleMediaLink(event girc.Event, msg *config.Message) {
 	defer cancel()
 
 	files := b.downloadMediaLinks(ctx, token, links)
-	for _, file := range files {
+	for i, file := range files {
 		if file.Data == nil {
 			continue
 		}
@@ -139,6 +139,9 @@ func (b *Birc) handleMediaLink(event girc.Event, msg *config.Message) {
 		}
 
 		msg.Extra["file"] = append(msg.Extra["file"], file)
+		// Keep filename requests parallel to successful attachments. A colon,
+		// including an empty name, opts into OneBot's filename description.
+		msg.Extra["irc_media_filename"] = append(msg.Extra["irc_media_filename"], strings.Contains(links[i].label, ":"))
 	}
 
 	msg.Text = strings.TrimSpace(mediaLinkText(original, token, links, files))

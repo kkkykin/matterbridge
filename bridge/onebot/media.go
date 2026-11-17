@@ -16,6 +16,8 @@ const (
 	mediaFile  = "file"
 	mediaText  = "text"
 	mediaImage = "image"
+	// IRC supplies filename requests in the same order as Extra["file"].
+	ircMediaFilename = "irc_media_filename"
 )
 
 // Transfer only bytes supplied by a source bridge. URL-only attachments keep
@@ -23,6 +25,7 @@ const (
 func (b *Bridge) outgoingFiles(ctx context.Context, client *ob.Client, group int64, m config.Message) ([]ob.Segment, config.Message) {
 	rendered := m
 	rendered.Extra = make(map[string][]any)
+	rendered.Extra[ircMediaFilename] = m.Extra[ircMediaFilename]
 
 	var images []ob.Segment
 

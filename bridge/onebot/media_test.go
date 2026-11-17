@@ -285,7 +285,11 @@ func assertMediaBytes(t *testing.T, uri string, want []byte) {
 }
 
 func TestOneBotTextAndMultipleImages(t *testing.T) {
-	photos := [][]byte{mediaTestPNG(t, color.RGBA{R: 255, A: 255}), mediaTestPNG(t, color.RGBA{B: 255, A: 255})}
+	photos := [][]byte{
+		mediaTestPNG(t, color.RGBA{R: 255, A: 255}),
+		mediaTestPNG(t, color.RGBA{B: 255, A: 255}),
+		mediaTestPNG(t, color.RGBA{G: 255, A: 255}),
+	}
 	for _, tc := range []struct {
 		name string
 		fail bool
@@ -296,7 +300,9 @@ func TestOneBotTextAndMultipleImages(t *testing.T) {
 				Extra: map[string][]any{"file": {
 					config.FileInfo{Name: "one.png", Data: &photos[0], URL: "https://cdn.example/one.png"},
 					config.FileInfo{Name: "two.png", Data: &photos[1], URL: "https://cdn.example/two.png"},
+					config.FileInfo{Name: "three.png", Data: &photos[2], URL: "https://cdn.example/three.png"},
 				}}}
+			m.Extra["irc_media_filename"] = []any{false, true, true}
 
 			id, err := b.Send(m)
 			if err != nil || id != "456" {
@@ -319,11 +325,38 @@ func TestOneBotTextAndMultipleImages(t *testing.T) {
 			if !strings.Contains(text, "图文") || !strings.Contains(text, "混排") || strings.Contains(text, "https://cdn.example/") != tc.fail {
 				t.Fatalf("caption or fallback links lost: %+v", a)
 			}
+			if strings.Contains(text, "[文件 one.png]") || !strings.Contains(text, "[文件 two.png]") || !strings.Contains(text, "[文件 three.png]") {
+				t.Fatalf("filename hints not respected: %+v", a)
+			}
+			if tc.fail && !strings.Contains(text, "https://cdn.example/one.png") {
+				t.Fatalf("unnamed image lost its fallback link: %+v", a)
+			}
 
 			if len(actions) != 0 {
 				t.Fatal("multiple images were split into separate messages")
 			}
 		})
+	}
+}
+
+func TestOneBotIRCImageOnlyWithoutFilename(t *testing.T) {
+	photo := mediaTestPNG(t, color.RGBA{R: 255, A: 255})
+	b, actions := mediaSocketBridge(t, false, false)
+	m := config.Message{Channel: "123", Username: "[irc] alice ", ParentID: "42",
+		Extra: map[string][]any{
+			"file":               {config.FileInfo{Name: "photo.png", Data: &photo}},
+			"irc_media_filename": {false},
+		}}
+
+	id, err := b.Send(m)
+	if err != nil || id != "456" {
+		t.Fatalf("send: %q %v", id, err)
+	}
+
+	a := receiveMediaAction(t, actions)
+	assertImageTail(t, a, [][]byte{photo})
+	if text := mediaActionText(a); text != m.Username {
+		t.Fatalf("unexpected image description: %q", text)
 	}
 }
 

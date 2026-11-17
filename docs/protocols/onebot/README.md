@@ -90,7 +90,7 @@ MediaLinkTimeout = 30
 # MediaLinkAccounts = ["alice"]
 ```
 
-消息中的 token 必须与 `MediaLinkToken` 一致；文件名可省略。
+消息中的 token 必须与 `MediaLinkToken` 一致。OneBot 默认省略 `[token](URL)` 的 `[文件 文件名]` 说明；`[token:文件名](URL)` 显示指定的文件名，`[token:](URL)` 显示从响应或 URL 推导的文件名。发送失败回退为链接时也遵循此规则，始终保留可用的 URL。
 
 `MediaLinkHosts` 必须是精确主机名，不带协议、端口或通配符；默认不设置白名单，开启 token 后必须配置。只下载 HTTPS 链接，拒绝重定向以及解析到私有、回环、链路本地等非公网地址的主机，直接连接而不使用环境代理。`MediaDownloadBlacklist` 沿用已有的文件名正则黑名单。文件名优先采用消息中的名称，其次采用 `Content-Disposition`，最后取 URL 路径末尾，并清理路径和控制字符。每个附件分别检查响应长度和实际读取量，每个 IRC 账号最多同时下载 4 个文件；同一消息的更多附件排队下载，共用 `MediaLinkTimeout` 的总时间上限（默认 30 秒）。
 
@@ -102,7 +102,7 @@ MediaLinkTimeout = 30
 今天的照片：[replace-media-token:one.png](https://litter.catbox.moe/one.png) [replace-media-token:two.png](https://litter.catbox.moe/two.png) 都是在公园拍的。
 ```
 
-OneBot 会在同一条消息中发送保留下来的正文和附件说明，再按链接出现的顺序发送所有图片；图片集中在文字后面。
+OneBot 会在同一条消息中发送保留下来的正文和显式请求的文件名说明，再按链接出现的顺序发送所有图片；图片集中在文字后面。
 
 OneBot 只上传来源 bridge 已提供的数据，按实际内容识别 PNG/JPEG/GIF/WebP/BMP 图片，其他文件使用 NapCat 的 `upload_group_file`。两者都通过 `base64://` 传输，无需共享容器目录，也不让 NapCat 再下载原始 URL。只有 URL 的附件保留文字链接；`MediaDownloadSize` 限制来源 bridge 的下载，OneBot 发送已有附件时不按此项限制大小。群文件上传是独立动作，返回给 gateway 的消息 ID 属于带发送者和文件名的说明消息；原生图片与说明、引用和提及在同一条消息中发送。媒体失败后只发送文字链接，不重复上传；回执丢失时，QQ 中可能已经存在媒体及额外的回退链接。
 
