@@ -79,7 +79,7 @@ channel = "987654321"
 
 ```toml
 [general]
-MediaDownloadSize = 10485760 # 10 MiB；同时用于 IRC 下载和 OneBot 上传。
+MediaDownloadSize = 10485760 # 10 MiB；媒体下载大小上限。
 
 [irc.local]
 # 其余 IRC 设置沿用现有配置；token 为空时关闭链接下载。
@@ -104,7 +104,7 @@ MediaLinkTimeout = 30
 
 OneBot 会在同一条消息中发送保留下来的正文和附件说明，再按链接出现的顺序发送所有图片；图片集中在文字后面。
 
-OneBot 只上传来源 bridge 已提供的数据，按实际内容识别 PNG/JPEG/GIF/WebP/BMP 图片，其他文件使用 NapCat 的 `upload_group_file`。两者都通过 `base64://` 传输，无需共享容器目录，也不让 NapCat 再下载原始 URL。超过目标 OneBot 账号 `MediaDownloadSize` 的附件和只有 URL 的附件保留文字链接；建议在 `[general]` 统一设置大小上限，未设置时为 1,000,000 字节。群文件上传是独立动作，返回给 gateway 的消息 ID 属于带发送者和文件名的说明消息；原生图片与说明、引用和提及在同一条消息中发送。媒体失败后只发送文字链接，不重复上传；回执丢失时，QQ 中可能已经存在媒体及额外的回退链接。
+OneBot 只上传来源 bridge 已提供的数据，按实际内容识别 PNG/JPEG/GIF/WebP/BMP 图片，其他文件使用 NapCat 的 `upload_group_file`。两者都通过 `base64://` 传输，无需共享容器目录，也不让 NapCat 再下载原始 URL。只有 URL 的附件保留文字链接；`MediaDownloadSize` 限制来源 bridge 的下载，OneBot 发送已有附件时不按此项限制大小。群文件上传是独立动作，返回给 gateway 的消息 ID 属于带发送者和文件名的说明消息；原生图片与说明、引用和提及在同一条消息中发送。媒体失败后只发送文字链接，不重复上传；回执丢失时，QQ 中可能已经存在媒体及额外的回退链接。
 
 ## IRC 合并转发临时频道
 

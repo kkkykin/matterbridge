@@ -26,18 +26,13 @@ func (b *Bridge) outgoingFiles(ctx context.Context, client *ob.Client, group int
 
 	var images []ob.Segment
 
-	limit := b.GetInt("MediaDownloadSize")
-	if limit == 0 {
-		limit = 1000000
-	}
-
 	for _, raw := range m.Extra[mediaFile] {
 		file, ok := raw.(config.FileInfo)
 		if !ok {
 			continue
 		}
 
-		if ctx.Err() != nil || file.Data == nil || len(*file.Data) == 0 || len(*file.Data) > limit || file.Avatar {
+		if ctx.Err() != nil || file.Data == nil || len(*file.Data) == 0 || file.Avatar {
 			rendered.Extra[mediaFile] = append(rendered.Extra[mediaFile], file)
 			continue
 		}

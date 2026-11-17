@@ -142,7 +142,8 @@ func TestOneBotNativeMediaAndFallback(t *testing.T) {
 		{name: "URL only", files: []config.FileInfo{{Name: "link.png", URL: "https://cdn.example/link.png"}}, wantLink: true},
 		{name: "image rejection", files: []config.FileInfo{{Name: "photo.png", Data: &photo, URL: "https://cdn.example/photo.png"}}, failImage: true, wantLink: true},
 		{name: "file rejection", files: []config.FileInfo{{Name: "报告.txt", Data: &document, URL: "https://cdn.example/report"}}, failFile: true, wantUploads: 1, wantLink: true},
-		{name: "size limit", files: []config.FileInfo{{Name: "photo.png", Data: &photo, URL: "https://cdn.example/photo.png"}}, limit: 1, wantLink: true},
+		{name: "image exceeds download limit", files: []config.FileInfo{{Name: "photo.png", Data: &photo, URL: "https://cdn.example/photo.png"}}, limit: 1, wantImages: true},
+		{name: "file exceeds download limit", files: []config.FileInfo{{Name: "报告.txt", Data: &document, URL: "https://cdn.example/report"}}, limit: 1, wantUploads: 1},
 		{name: "content sniffing", files: []config.FileInfo{{Name: "fake.png", Data: &document, URL: "https://cdn.example/fake.png"}}, wantUploads: 1},
 		{name: "mixed fallback uploads once", files: []config.FileInfo{{Name: "报告.txt", Data: &document, URL: "https://cdn.example/report"}, {Name: "photo.png", Data: &photo, URL: "https://cdn.example/photo.png"}}, failImage: true, wantUploads: 1, wantLink: true},
 	} {
@@ -185,6 +186,36 @@ func TestOneBotNativeMediaAndFallback(t *testing.T) {
 			assertSourceFiles(t, m, tc.files)
 		})
 	}
+}
+
+func TestOneBotLargeMediaWithZeroDownloadSize(t *testing.T) {
+	photo := mediaTestPNG(t, color.RGBA{R: 255, A: 255})
+	// Preserve the PNG signature while exceeding the former 1 MB default.
+	photo = append(photo, make([]byte, 1000001-len(photo))...)
+	document := bytes.Repeat([]byte("x"), 1000001)
+
+	b, actions := mediaSocketBridge(t, false, false)
+	b.Config.Config.SetVal("general.MediaDownloadSize", 30000000)
+	b.Config.Config.SetVal("onebot.qq.MediaDownloadSize", 0)
+	files := []config.FileInfo{
+		{Name: "report.txt", Data: &document, URL: "https://cdn.example/report"},
+		{Name: "photo.png", Data: &photo, URL: "https://cdn.example/photo.png"},
+	}
+	m := config.Message{Channel: "123", Username: "[irc] alice ", Text: "caption @123", ParentID: "42",
+		Extra: map[string][]any{"file": {files[0], files[1]}}}
+
+	id, err := b.Send(m)
+	if err != nil || id != "456" {
+		t.Fatalf("send: %q %v", id, err)
+	}
+
+	assertMediaUpload(t, receiveMediaAction(t, actions), document)
+	assertMediaSend(t, receiveMediaAction(t, actions), photo, true, false)
+	if len(actions) != 0 {
+		t.Fatal("unexpected media retry")
+	}
+
+	assertSourceFiles(t, m, files)
 }
 
 // A destination must not alter files still destined for other bridges.
