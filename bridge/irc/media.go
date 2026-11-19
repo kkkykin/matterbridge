@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -29,6 +30,7 @@ var errIRCMedia = errors.New("IRC media")
 type ircMedia struct {
 	client    *http.Client
 	downloads chan struct{}
+	hostRegex atomic.Pointer[regexp.Regexp]
 }
 
 type ircMediaLink struct {
@@ -64,15 +66,20 @@ func (b *Birc) validateMediaLinkConfig() error {
 		return fmt.Errorf("%w: MediaLinkToken cannot contain whitespace, control characters or :[]()", errIRCMedia)
 	}
 
-	hosts := b.GetStringSlice("MediaLinkHosts")
-	if len(hosts) == 0 {
-		return fmt.Errorf("%w: MediaLinkToken requires MediaLinkHosts", errIRCMedia)
+	pattern := b.GetString("MediaLinkHostRegex")
+	if pattern == "" {
+		return fmt.Errorf("%w: MediaLinkToken requires MediaLinkHostRegex", errIRCMedia)
 	}
 
-	for _, host := range hosts {
-		if !validMediaHost(host) {
-			return fmt.Errorf("%w: MediaLinkHosts must contain exact hostnames without ports or wildcards", errIRCMedia)
-		}
+	// Validate the pattern alone so unmatched groups cannot escape the wrapper.
+	_, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("%w: invalid MediaLinkHostRegex: %w", errIRCMedia, err)
+	}
+
+	hostRegex, err := regexp.Compile(`(?i)\A(?:` + pattern + `)\z`)
+	if err != nil {
+		return fmt.Errorf("%w: invalid MediaLinkHostRegex: %w", errIRCMedia, err)
 	}
 
 	if b.GetInt("MediaLinkTimeout") < 0 || b.GetInt("MediaDownloadSize") < 0 {
@@ -86,14 +93,10 @@ func (b *Birc) validateMediaLinkConfig() error {
 		}
 	}
 
+	// Connect may run again while downloads from the old connection finish.
+	b.media.hostRegex.Store(hostRegex)
+
 	return nil
-}
-
-func validMediaHost(host string) bool {
-	u, err := url.Parse("https://" + host)
-
-	return err == nil && u.Hostname() != "" && u.Host == host && u.User == nil && u.Port() == "" &&
-		u.Path == "" && u.RawQuery == "" && u.Fragment == "" && !strings.ContainsAny(host, "* \\")
 }
 
 func (b *Birc) handleMediaLink(event girc.Event, msg *config.Message) {
@@ -284,7 +287,7 @@ func (b *Birc) downloadMediaLink(ctx context.Context, token string, link ircMedi
 	label, name, _ := strings.Cut(link.label, ":")
 
 	u, err := url.Parse(link.url)
-	if label != token || err != nil || !mediaURLAllowed(u, b.GetStringSlice("MediaLinkHosts")) {
+	if label != token || err != nil || !mediaURLAllowed(u, b.media.hostRegex.Load()) {
 		return config.FileInfo{}
 	}
 
@@ -327,8 +330,8 @@ func mediaHostAllowed(host string, allowed []string) bool {
 	return false
 }
 
-func mediaURLAllowed(u *url.URL, hosts []string) bool {
-	return u.Scheme == "https" && u.User == nil && u.Hostname() != "" && mediaHostAllowed(u.Hostname(), hosts)
+func mediaURLAllowed(u *url.URL, hostRegex *regexp.Regexp) bool {
+	return u.Scheme == "https" && u.User == nil && u.Hostname() != "" && hostRegex != nil && hostRegex.MatchString(u.Hostname())
 }
 
 func (b *Birc) downloadMedia(ctx context.Context, u *url.URL, name string) (config.FileInfo, error) {

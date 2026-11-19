@@ -30,7 +30,8 @@ ReverseMention = false
 BotMentionTarget = ""
 # [token](URL) / [token:文件名](URL) 下载后转成附件；默认关闭。
 # MediaLinkToken = "replace-media-token"
-# MediaLinkHosts = ["litter.catbox.moe"]
+# 主机名正则，忽略大小写并匹配整个主机名；多域名用 |，单引号保留反斜杠。
+# MediaLinkHostRegex = 'litter\.catbox\.moe'
 # MediaLinkTimeout = 30
 # MediaLinkAccounts = ["alice"] # 可选：Ergo 登录账号，不是昵称。
 

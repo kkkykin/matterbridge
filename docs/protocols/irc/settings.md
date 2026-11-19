@@ -308,17 +308,26 @@ For relayed OneBot users, `@virtual-nick` and a leading `virtual-nick:` resolve
 to QQ mentions. See [OneBot virtual nicknames](../onebot/README.md#ergo-relaymsg-虚拟昵称)
 for mention syntax and cache scope.
 
-## MediaLinkToken / MediaLinkHosts
+## MediaLinkToken / MediaLinkHostRegex
 
 Opt in to downloading `[token](URL)` or `[token:filename](URL)` links anywhere
 in a message as standard attachments for other gateway destinations. A message
 can contain multiple links and text; `![token](URL)` is also accepted. `MediaLinkToken`
-is empty by default; enabling it requires an exact hostname allowlist in
-`MediaLinkHosts`. Only HTTPS URLs are downloaded. Redirects and private addresses
-are rejected. `MediaLinkTimeout` defaults to 30 seconds for the entire message's
-attachment downloads, including queued links; `MediaDownloadSize` and
+is empty by default; enabling it requires a nonempty Go regular expression string in
+`MediaLinkHostRegex`. It is compiled at startup and matched against the entire
+hostname, case-insensitively; the scheme, port and path are not part of the match.
+Use `|` to allow multiple hosts and escape literal dots with `\.`. Empty or invalid
+patterns prevent startup when the token is enabled. Only HTTPS URLs are downloaded.
+Redirects and private addresses are rejected. `MediaLinkTimeout` defaults to 30
+seconds for the entire message's attachment downloads, including queued links;
+`MediaDownloadSize` and
 `MediaDownloadBlacklist` also apply. An optional `MediaLinkAccounts` list checks
 the sender's server-issued `account-tag`, rather than their nick.
+
+```toml
+MediaLinkToken = "replace-media-token"
+MediaLinkHostRegex = 'litter\.catbox\.moe|cdn[0-9]+\.example\.com'
+```
 
 When enabled, HTTP(S) Markdown links have their label stripped before validation.
 Successful links become attachments in source order; text is retained and failed

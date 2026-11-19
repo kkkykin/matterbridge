@@ -32,7 +32,7 @@ Nick="qq-bridge"
 Charset="utf-8"
 MessageDelay=10
 MediaLinkToken="test-token"
-MediaLinkHosts=["127.0.0.1"]
+MediaLinkHostRegex='127\.0\.0\.1'
 [[gateway]]
 name="media"
 enable=true

@@ -25,8 +25,13 @@ func mediaTestBridge(t *testing.T, server *httptest.Server) *Birc {
 	t.Cleanup(viper.Reset)
 	b := replyTestBridge(t)
 	b.Config.Config.SetVal("irc.test.MediaLinkToken", "test-token")
-	b.Config.Config.SetVal("irc.test.MediaLinkHosts", []string{"127.0.0.1"})
+	b.Config.Config.SetVal("irc.test.MediaLinkHostRegex", `127\.0\.0\.1`)
 	b.Config.Config.SetVal("irc.test.MediaDownloadSize", 8)
+
+	err := b.validateMediaLinkConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	b.channels["#files"] = true
 	if server != nil {
@@ -220,6 +225,61 @@ func TestIRCMediaDisabledPlainTextAndAccount(t *testing.T) {
 
 	if len(m.Extra["file"]) != 1 {
 		t.Fatal("trusted account was rejected")
+	}
+
+	for _, account := range []string{"ali", "a.*", "alice|bob"} {
+		b.Config.Config.SetVal("irc.test.MediaLinkAccounts", []string{account})
+
+		m = config.Message{Text: text, Channel: "#files"}
+		b.handleMediaLink(e, &m)
+
+		if len(m.Extra["file"]) != 0 {
+			t.Fatalf("account allowlist was not exact: %q", account)
+		}
+	}
+}
+
+func TestIRCMediaHostRegex(t *testing.T) {
+	b := mediaTestBridge(t, nil)
+	b.Config.Config.SetVal("irc.test.MediaLinkHostRegex", `litter\.catbox\.moe|cdn[0-9]+\.example\.com`)
+
+	err := b.validateMediaLinkConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		url     string
+		allowed bool
+	}{
+		{"https://litter.catbox.moe/photo.png", true},
+		{"https://LITTER.CATBOX.MOE:8443/photo.png?x=1", true},
+		{"https://cdn1.example.com/photo.png", true},
+		{"https://CDN123.EXAMPLE.COM/photo.png", true},
+		{"https://xlitter.catbox.moe/photo.png", false},
+		{"https://litter.catbox.moe.evil.org/photo.png", false},
+		{"https://litterXcatboxYmoe/photo.png", false},
+		{"https://xcdn1.example.com/photo.png", false},
+		{"https://cdn1.example.com.evil.org/photo.png", false},
+		{"https://cdn.example.com/photo.png", false},
+		{"https://unlisted.example/litter.catbox.moe?host=cdn1.example.com", false},
+		{"http://litter.catbox.moe/photo.png", false},
+		{"https://user@litter.catbox.moe/photo.png", false},
+	} {
+		t.Run(tc.url, func(t *testing.T) {
+			u, err := url.Parse(tc.url)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got := mediaURLAllowed(u, b.media.hostRegex.Load()); got != tc.allowed {
+				t.Fatalf("allowed = %v, want %v", got, tc.allowed)
+			}
+
+			if mediaURLAllowed(u, nil) {
+				t.Fatal("allowed URL without a configured host regex")
+			}
+		})
 	}
 }
 
@@ -434,8 +494,8 @@ func TestIRCMediaPublicAddressesAndConfiguration(t *testing.T) {
 		value any
 	}{
 		{"MediaLinkToken", "bad:token"}, {"MediaLinkToken", "bad token"},
-		{"MediaLinkHosts", []string{}}, {"MediaLinkHosts", []string{"https://cdn.example"}},
-		{"MediaLinkHosts", []string{"*.example"}}, {"MediaLinkHosts", []string{"cdn.example:443"}},
+		{"MediaLinkHostRegex", ""}, {"MediaLinkHostRegex", "["},
+		{"MediaLinkHostRegex", "*.example"}, {"MediaLinkHostRegex", ")|.*|("},
 		{"MediaLinkTimeout", -1}, {"MediaDownloadSize", -1}, {"MediaDownloadBlacklist", []string{"["}},
 	} {
 		b := mediaTestBridge(t, nil)

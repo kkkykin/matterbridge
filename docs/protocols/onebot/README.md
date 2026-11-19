@@ -84,7 +84,7 @@ MediaDownloadSize = 10485760 # 10 MiB；媒体下载大小上限。
 [irc.local]
 # 其余 IRC 设置沿用现有配置；token 为空时关闭链接下载。
 MediaLinkToken = "replace-media-token"
-MediaLinkHosts = ["litter.catbox.moe"]
+MediaLinkHostRegex = 'litter\.catbox\.moe'
 MediaLinkTimeout = 30
 # 可选：检查服务器提供的 account-tag，填写 Ergo 登录账号而非昵称。
 # MediaLinkAccounts = ["alice"]
@@ -92,7 +92,9 @@ MediaLinkTimeout = 30
 
 消息中的 token 必须与 `MediaLinkToken` 一致。OneBot 默认省略 `[token](URL)` 的 `[文件 文件名]` 说明；`[token:文件名](URL)` 显示指定的文件名，`[token:](URL)` 显示从响应或 URL 推导的文件名。发送失败回退为链接时也遵循此规则，始终保留可用的 URL。
 
-`MediaLinkHosts` 必须是精确主机名，不带协议、端口或通配符；默认不设置白名单，开启 token 后必须配置。只下载 HTTPS 链接，拒绝重定向以及解析到私有、回环、链路本地等非公网地址的主机，直接连接而不使用环境代理。`MediaDownloadBlacklist` 沿用已有的文件名正则黑名单。文件名优先采用消息中的名称，其次采用 `Content-Disposition`，最后取 URL 路径末尾，并清理路径和控制字符。每个附件分别检查响应长度和实际读取量，每个 IRC 账号最多同时下载 4 个文件；同一消息的更多附件排队下载，共用 `MediaLinkTimeout` 的总时间上限（默认 30 秒）。
+`MediaLinkHostRegex` 是单个 Go 正则字符串，启动时编译，忽略大小写并强制匹配整个主机名，不包含协议、端口或路径。多个域名用 `|`，例如 `'litter\.catbox\.moe|cdn[0-9]+\.example\.com'`；字面量点写作 `\.`，建议使用 TOML 单引号保留反斜杠。默认不设置白名单，开启 token 后必须配置非空、合法的正则。
+
+只下载 HTTPS 链接，拒绝重定向以及解析到私有、回环、链路本地等非公网地址的主机，直接连接而不使用环境代理。`MediaDownloadBlacklist` 沿用已有的文件名正则黑名单。文件名优先采用消息中的名称，其次采用 `Content-Disposition`，最后取 URL 路径末尾，并清理路径和控制字符。每个附件分别检查响应长度和实际读取量，每个 IRC 账号最多同时下载 4 个文件；同一消息的更多附件排队下载，共用 `MediaLinkTimeout` 的总时间上限（默认 30 秒）。
 
 启用后，HTTP(S) Markdown 链接中的标签会先移除；成功下载的链接从正文移入附件，其他文字保留。token 不匹配、账号或域名不允许、下载超时、过期、超限等情况会在原位置保留 URL，其他附件仍可成功转发，**不会把 token 转发到其他 bridge 或后续回复引用**。不完整标记及动作消息中的 token 也会移除，动作和 NOTICE 不下载附件。普通裸链接不触发下载。token 会出现在源 IRC 频道和历史中；需要限制发送者时设置 `MediaLinkAccounts`，缺少有效 account-tag 时回退为链接。
 
